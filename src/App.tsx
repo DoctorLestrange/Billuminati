@@ -76,10 +76,12 @@ export default function App() {
       loadFromStorage(STORAGE_KEYS.TERMS, DEFAULT_TERMS_AND_CONDITIONS)
     );
 
-  const [defaultPdfOptions] = useState<PdfPageOptions>(() => ({
-    ...DEFAULT_PDF_OPTIONS,
-    ...loadFromStorage(STORAGE_KEYS.PDF_OPTS, DEFAULT_PDF_OPTIONS),
-  }));
+  const [defaultPdfOptions, setDefaultPdfOptions] = useState<PdfPageOptions>(
+    () => ({
+      ...DEFAULT_PDF_OPTIONS,
+      ...loadFromStorage(STORAGE_KEYS.PDF_OPTS, DEFAULT_PDF_OPTIONS),
+    })
+  );
 
   const [catalog, setCatalog] = useState<CatalogItem[]>(() =>
     loadFromStorage(STORAGE_KEYS.CATALOG, INITIAL_CATALOG)
@@ -127,11 +129,15 @@ export default function App() {
     }
   }, [invoices]);
 
-  // Persist seller, bank, default terms, catalog
+  // Persist seller, bank, default terms, pdf options, catalog
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.SELLER, JSON.stringify(defaultSeller));
       localStorage.setItem(STORAGE_KEYS.BANK, JSON.stringify(defaultBank));
+      localStorage.setItem(
+        STORAGE_KEYS.PDF_OPTS,
+        JSON.stringify(defaultPdfOptions)
+      );
       localStorage.setItem(
         STORAGE_KEYS.TERMS,
         JSON.stringify(defaultTermsAndConditions)
@@ -140,7 +146,13 @@ export default function App() {
     } catch {
       // ignore storage errors
     }
-  }, [defaultSeller, defaultBank, defaultTermsAndConditions, catalog]);
+  }, [
+    defaultSeller,
+    defaultBank,
+    defaultPdfOptions,
+    defaultTermsAndConditions,
+    catalog,
+  ]);
 
   const createBlankInvoice = (): Invoice => {
     const today = new Date().toISOString().slice(0, 10);
@@ -159,6 +171,7 @@ export default function App() {
       isCashCustomer: false,
       paymentMethod: '',
       paymentMethodOther: '',
+      paymentDate: '',
       paymentMethodDetails: '',
       calculateDiscountOnFinalValue: true,
       seller: { ...defaultSeller },
@@ -239,18 +252,28 @@ export default function App() {
   };
 
   const handleDuplicateInvoice = (source: Invoice) => {
+    const now = Date.now();
     const today = new Date().toISOString().slice(0, 10);
-    const due = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
-    const cloned: Invoice = {
-      ...JSON.parse(JSON.stringify(source)),
-      id: `inv-${Date.now()}`,
+    const due = new Date(now + 15 * 86400000).toISOString().slice(0, 10);
+    const sourceCopy: Invoice = JSON.parse(JSON.stringify(source));
+    const cloned: Invoice = normalizeInvoiceRecord({
+      ...sourceCopy,
+      id: `inv-${now}`,
       invoiceNumber: generateNextInvoiceNumber(invoices),
       issueDate: today,
       dueDate: due,
-      status: 'Draft',
+      status: 'Pending',
+      paymentMethod: '',
+      paymentMethodOther: '',
+      paymentDate: '',
+      paymentMethodDetails: '',
+      items: sourceCopy.items.map((item, idx) => ({
+        ...item,
+        id: `item-${now}-${idx + 1}`,
+      })),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
+    });
     setInvoices((prev) => [cloned, ...prev]);
   };
 
@@ -272,6 +295,12 @@ export default function App() {
                     new Date(Date.now() + 15 * 86400000)
                       .toISOString()
                       .slice(0, 10),
+              paymentMethod: status === 'Paid' ? inv.paymentMethod || '' : '',
+              paymentMethodOther:
+                status === 'Paid' ? inv.paymentMethodOther || '' : '',
+              paymentDate: status === 'Paid' ? inv.paymentDate || '' : '',
+              paymentMethodDetails:
+                status === 'Paid' ? inv.paymentMethodDetails || '' : '',
               updatedAt: new Date().toISOString(),
             }
           : inv
@@ -344,23 +373,40 @@ export default function App() {
     mode: 'merge' | 'replace'
   ) => {
     if (Array.isArray(backup.invoices)) {
+      const normalizedIncoming = backup.invoices.map((inv, idx) =>
+        normalizeInvoiceRecord(inv, idx)
+      );
       if (mode === 'replace') {
-        setInvoices(backup.invoices);
+        setInvoices(normalizedIncoming);
+        setActiveView('dashboard');
+        setEditingInvoice(null);
       } else {
         setInvoices((prev) => {
           const map = new Map<string, Invoice>();
           for (const inv of prev) map.set(inv.id, inv);
-          for (const inv of backup.invoices!) map.set(inv.id, inv);
+          for (const inv of normalizedIncoming) map.set(inv.id, inv);
           return Array.from(map.values());
         });
       }
     }
-    if (backup.defaultSeller) setDefaultSeller(backup.defaultSeller);
-    if (backup.defaultBank) setDefaultBank(backup.defaultBank);
+    if (backup.defaultSeller && typeof backup.defaultSeller === 'object') {
+      setDefaultSeller((prev) => ({ ...prev, ...backup.defaultSeller }));
+    }
+    if (backup.defaultBank && typeof backup.defaultBank === 'object') {
+      setDefaultBank((prev) => ({ ...prev, ...backup.defaultBank }));
+    }
+    if (backup.defaultPdfOptions && typeof backup.defaultPdfOptions === 'object') {
+      setDefaultPdfOptions((prev) => ({
+        ...prev,
+        ...backup.defaultPdfOptions,
+      }));
+    }
     if (typeof backup.defaultTermsAndConditions === 'string') {
       setDefaultTermsAndConditions(backup.defaultTermsAndConditions);
     }
-    if (Array.isArray(backup.catalog)) setCatalog(backup.catalog);
+    if (Array.isArray(backup.catalog)) {
+      setCatalog(backup.catalog);
+    }
   };
 
   return (

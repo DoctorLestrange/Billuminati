@@ -14,6 +14,7 @@ import {
   formatBuyerDisplayName,
   formatCurrency,
   formatPaymentMethodSummary,
+  getItemNameTypography,
   normalizeTaxMode,
   processSellerLogoFile,
 } from '../utils/billing';
@@ -238,6 +239,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                       {invoice.invoiceNumber}
                     </p>
                     <p>Invoice Date: {invoice.issueDate}</p>
+                    {invoice.status === 'Paid' && invoice.paymentDate && (
+                      <p>Payment Date: {invoice.paymentDate}</p>
+                    )}
                     {invoice.status !== 'Paid' && invoice.dueDate && (
                       <p>Due Date: {invoice.dueDate}</p>
                     )}
@@ -305,7 +309,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                         </span>
                       </div>
                       <div>
-                        <span className="text-zinc-500">Status:</span>{' '}
+                        <span className="text-zinc-500">Payment Status:</span>{' '}
                         <span className="font-semibold">{invoice.status}</span>
                       </div>
                       {paymentSummary && (
@@ -334,6 +338,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                       )}
                       <th className="py-2 px-1.5 font-semibold text-right">Qty</th>
                       <th className="py-2 px-1.5 font-semibold text-right">Rate (Excl)</th>
+                      {options.showDiscountColumn && (
+                        <th className="py-2 px-1.5 font-semibold text-right">Discount</th>
+                      )}
                       <th className="py-2 px-1.5 font-semibold text-right">Taxable Val</th>
                       {taxMode === 'CGST_SGST' && (
                         <>
@@ -344,26 +351,26 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                       {taxMode === 'IGST' && (
                         <th className="py-2 px-1.5 font-semibold text-right">IGST</th>
                       )}
-                      {options.showDiscountColumn && (
-                        <th className="py-2 px-1.5 font-semibold text-right">Discount</th>
-                      )}
                       <th className="py-2 px-1.5 font-semibold text-right">Total (Incl)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-200">
                     {invoice.items.map((item, idx) => {
                       const calc = summary.lines[item.id];
+                      const nameTypo = getItemNameTypography(item.name);
                       return (
                         <tr key={item.id} className="align-top">
                           <td className="py-2.5 px-1.5 text-zinc-500 tabular-nums">
                             {idx + 1}
                           </td>
-                          <td className="py-2.5 px-1.5">
-                            <div className="font-semibold text-zinc-900">
+                          <td className="py-2.5 px-1.5 max-w-[210px] whitespace-normal break-words">
+                            <div
+                              className={`font-semibold text-zinc-900 ${nameTypo.previewFontClass}`}
+                            >
                               {item.name}
                             </div>
                             {item.description && (
-                              <div className="text-[10px] text-zinc-500 mt-0.5">
+                              <div className="text-[10px] leading-snug text-zinc-500 mt-0.5 whitespace-normal break-words">
                                 {item.description}
                               </div>
                             )}
@@ -387,6 +394,13 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                               Incl: {formatCurrency(calc?.unitPriceInclusive || 0)}
                             </div>
                           </td>
+                          {options.showDiscountColumn && (
+                            <td className="py-2.5 px-1.5 text-right tabular-nums text-zinc-600 whitespace-nowrap">
+                              {(calc?.preTaxDiscountAmount || 0) > 0
+                                ? `-${formatCurrency(calc?.preTaxDiscountAmount || 0)}`
+                                : '—'}
+                            </td>
+                          )}
                           <td className="py-2.5 px-1.5 text-right tabular-nums font-medium text-zinc-800 whitespace-nowrap">
                             {formatCurrency(calc?.taxableAmount || 0)}
                           </td>
@@ -412,13 +426,6 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                               <div className="text-[10px] text-zinc-400">
                                 @{calc?.effectiveIgstPercent || 0}%
                               </div>
-                            </td>
-                          )}
-                          {options.showDiscountColumn && (
-                            <td className="py-2.5 px-1.5 text-right tabular-nums text-zinc-600 whitespace-nowrap">
-                              {(calc?.preTaxDiscountAmount || 0) > 0
-                                ? `-${formatCurrency(calc?.preTaxDiscountAmount || 0)}`
-                                : '—'}
                             </td>
                           )}
                           <td className="py-2.5 px-1.5 text-right font-semibold tabular-nums text-zinc-900 whitespace-nowrap">
@@ -494,28 +501,21 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                 <div className="sm:col-span-5 space-y-2 tabular-nums">
                   <div className="flex justify-between text-zinc-800 font-semibold">
                     <span>Subtotal</span>
-                    <span>{formatCurrency(summary.merchandiseSubtotal)}</span>
+                    <span>{formatCurrency(summary.lineTaxableSubtotal)}</span>
                   </div>
-                  {summary.itemPreTaxDiscountTotal > 0 && (
-                    <div className="flex justify-between text-zinc-600">
-                      <span>Line Item Discounts</span>
-                      <span>-{formatCurrency(summary.itemPreTaxDiscountTotal)}</span>
-                    </div>
-                  )}
                   {summary.additionalPreTaxDiscountAmount > 0 && (
-                    <div className="flex justify-between text-zinc-600">
-                      <span>Additional Invoice Discount</span>
-                      <span>
-                        -{formatCurrency(summary.additionalPreTaxDiscountAmount)}
-                      </span>
-                    </div>
-                  )}
-                  {(summary.itemPreTaxDiscountTotal > 0 ||
-                    summary.additionalPreTaxDiscountAmount > 0) && (
-                    <div className="flex justify-between text-zinc-800 font-medium pt-1 border-t border-zinc-200">
-                      <span>Total Taxable Value</span>
-                      <span>{formatCurrency(summary.taxableSubtotal)}</span>
-                    </div>
+                    <>
+                      <div className="flex justify-between text-zinc-600">
+                        <span>Additional Invoice Discount</span>
+                        <span>
+                          -{formatCurrency(summary.additionalPreTaxDiscountAmount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-zinc-800 font-medium pt-1 border-t border-zinc-200">
+                        <span>Total Taxable Value</span>
+                        <span>{formatCurrency(summary.taxableSubtotal)}</span>
+                      </div>
+                    </>
                   )}
                   {taxMode === 'CGST_SGST' ? (
                     <>

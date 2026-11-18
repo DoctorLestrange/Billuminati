@@ -131,23 +131,37 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
   onCancel,
   onOpenPdfPreview,
 }) => {
-  const [invoice, setInvoice] = useState<Invoice>(() => ({
-    ...initialInvoice,
-    currency: 'INR',
-    taxMode: normalizeTaxMode(initialInvoice.taxMode),
-    dueDate: initialInvoice.status === 'Paid' ? '' : initialInvoice.dueDate || '',
-    isCashCustomer: Boolean(initialInvoice.isCashCustomer),
-    paymentMethod: initialInvoice.paymentMethod || '',
-    paymentMethodOther: initialInvoice.paymentMethodOther || '',
-    paymentMethodDetails: initialInvoice.paymentMethodDetails || '',
-    calculateDiscountOnFinalValue:
-      initialInvoice.calculateDiscountOnFinalValue ?? true,
-    shippingAndHandling: 0,
-    pdfOptions: {
-      ...initialInvoice.pdfOptions,
-      showSellerLogo: initialInvoice.pdfOptions?.showSellerLogo ?? true,
-    },
-  }));
+  const [invoice, setInvoice] = useState<Invoice>(() => {
+    const initialIsPaid = initialInvoice.status === 'Paid';
+    return {
+      ...initialInvoice,
+      status:
+        initialInvoice.status === 'Paid' ||
+        initialInvoice.status === 'Pending' ||
+        initialInvoice.status === 'Overdue'
+          ? initialInvoice.status
+          : 'Pending',
+      currency: 'INR',
+      taxMode: normalizeTaxMode(initialInvoice.taxMode),
+      dueDate: initialIsPaid ? '' : initialInvoice.dueDate || '',
+      isCashCustomer: Boolean(initialInvoice.isCashCustomer),
+      paymentMethod: initialIsPaid ? initialInvoice.paymentMethod || '' : '',
+      paymentMethodOther: initialIsPaid
+        ? initialInvoice.paymentMethodOther || ''
+        : '',
+      paymentDate: initialIsPaid ? initialInvoice.paymentDate || '' : '',
+      paymentMethodDetails: initialIsPaid
+        ? initialInvoice.paymentMethodDetails || ''
+        : '',
+      calculateDiscountOnFinalValue:
+        initialInvoice.calculateDiscountOnFinalValue ?? true,
+      shippingAndHandling: 0,
+      pdfOptions: {
+        ...initialInvoice.pdfOptions,
+        showSellerLogo: initialInvoice.pdfOptions?.showSellerLogo ?? true,
+      },
+    };
+  });
   const [syncCgstSgst, setSyncCgstSgst] = useState(true);
   const [showSellerBankPanel, setShowSellerBankPanel] = useState(false);
   const [showPageOptionsPanel, setShowPageOptionsPanel] = useState(false);
@@ -173,14 +187,18 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
 
   const handleStatusChange = (nextStatus: InvoiceStatus) => {
     setValidationError(null);
+    const nextIsPaid = nextStatus === 'Paid';
     setInvoice((prev) => ({
       ...prev,
       status: nextStatus,
-      dueDate:
-        nextStatus === 'Paid'
-          ? ''
-          : prev.dueDate ||
-            new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
+      dueDate: nextIsPaid
+        ? ''
+        : prev.dueDate ||
+          new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
+      paymentMethod: nextIsPaid ? prev.paymentMethod || '' : '',
+      paymentMethodOther: nextIsPaid ? prev.paymentMethodOther || '' : '',
+      paymentDate: nextIsPaid ? prev.paymentDate || '' : '',
+      paymentMethodDetails: nextIsPaid ? prev.paymentMethodDetails || '' : '',
       updatedAt: new Date().toISOString(),
     }));
   };
@@ -769,7 +787,6 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
               <option value="Pending">Pending</option>
               <option value="Paid">Paid</option>
               <option value="Overdue">Overdue</option>
-              <option value="Draft">Draft</option>
             </select>
           </div>
 
@@ -795,41 +812,54 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
           </div>
         </div>
 
-        {/* Payment Method & Settlement Details (Always Active, Never Disabled by Cash Customer) */}
+        {/* Payment Method & Settlement Details (Enabled only when Paid; Disabled & Cleared when Pending or Overdue) */}
         <div className="pt-4 border-t border-zinc-200 dark:border-[#2a2a2e]">
-          <div className="mb-2.5">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-              Payment Method & Settlement Details (Optional)
-            </h2>
-            <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-              Specify how the customer has paid or will pay (Direct Bank Transfer, UPI, Cash, Cheque, or Others) along with reference details.
-            </p>
+          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Payment Method & Settlement Details (Optional)
+              </h2>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                {isPaid
+                  ? 'Specify how and when the customer paid (Direct Bank Transfer, UPI, Cash, Cheque, or Others) along with reference details.'
+                  : 'Disabled when Payment Status is Pending or Overdue. Select "Paid" to record payment method, date, and reference.'}
+              </p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
+          <fieldset
+            disabled={!isPaid}
+            aria-label="Payment Method and Settlement Details Fields"
+            className="grid grid-cols-1 sm:grid-cols-12 gap-3.5 disabled:opacity-55"
+          >
             <div
               className={
-                invoice.paymentMethod === 'Other'
-                  ? 'sm:col-span-4'
-                  : 'sm:col-span-5'
+                isPaid && invoice.paymentMethod === 'Other'
+                  ? 'sm:col-span-3'
+                  : 'sm:col-span-4'
               }
             >
               <label
                 htmlFor="inv-payment-method"
                 className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1"
               >
-                Payment Method (Optional)
+                Payment Method {!isPaid ? '(Disabled)' : '(Optional)'}
               </label>
               <select
                 id="inv-payment-method"
-                value={invoice.paymentMethod || ''}
-                onChange={(e) =>
-                  updateField(
-                    'paymentMethod',
-                    e.target.value as PaymentMethodType
-                  )
-                }
-                className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100"
+                disabled={!isPaid}
+                value={isPaid ? invoice.paymentMethod || '' : ''}
+                onChange={(e) => {
+                  const nextMethod = e.target.value as PaymentMethodType;
+                  setInvoice((prev) => ({
+                    ...prev,
+                    paymentMethod: nextMethod,
+                    paymentMethodOther:
+                      nextMethod === 'Other' ? prev.paymentMethodOther || '' : '',
+                    updatedAt: new Date().toISOString(),
+                  }));
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-[#161619]"
               >
                 {PAYMENT_METHOD_OPTIONS.map((opt) => (
                   <option key={opt.value || 'none'} value={opt.value}>
@@ -839,7 +869,7 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
               </select>
             </div>
 
-            {invoice.paymentMethod === 'Other' && (
+            {isPaid && invoice.paymentMethod === 'Other' && (
               <div className="sm:col-span-3">
                 <label
                   htmlFor="inv-payment-method-other"
@@ -850,41 +880,66 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 <input
                   id="inv-payment-method-other"
                   type="text"
+                  disabled={!isPaid}
                   placeholder="e.g. Card / Demand Draft / Wallet"
-                  value={invoice.paymentMethodOther || ''}
+                  value={isPaid ? invoice.paymentMethodOther || '' : ''}
                   onChange={(e) =>
                     updateField('paymentMethodOther', e.target.value)
                   }
-                  className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100"
+                  className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-[#161619]"
                 />
               </div>
             )}
 
             <div
               className={
-                invoice.paymentMethod === 'Other'
-                  ? 'sm:col-span-5'
-                  : 'sm:col-span-7'
+                isPaid && invoice.paymentMethod === 'Other'
+                  ? 'sm:col-span-2'
+                  : 'sm:col-span-3'
+              }
+            >
+              <label
+                htmlFor="inv-payment-date"
+                className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+              >
+                Payment Date {!isPaid ? '(Disabled)' : '(Optional)'}
+              </label>
+              <input
+                id="inv-payment-date"
+                type="date"
+                disabled={!isPaid}
+                value={isPaid ? invoice.paymentDate || '' : ''}
+                onChange={(e) => updateField('paymentDate', e.target.value)}
+                className="w-full px-3 py-2 font-mono rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-[#161619]"
+              />
+            </div>
+
+            <div
+              className={
+                isPaid && invoice.paymentMethod === 'Other'
+                  ? 'sm:col-span-4'
+                  : 'sm:col-span-5'
               }
             >
               <label
                 htmlFor="inv-payment-method-details"
                 className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1"
               >
-                Payment Details / Reference (Optional)
+                Payment Details / Reference {!isPaid ? '(Disabled)' : '(Optional)'}
               </label>
               <input
                 id="inv-payment-method-details"
                 type="text"
+                disabled={!isPaid}
                 placeholder="e.g. NEFT UTR #, UPI Transaction ID, Cheque No. & Bank, or Cash Receipt note..."
-                value={invoice.paymentMethodDetails || ''}
+                value={isPaid ? invoice.paymentMethodDetails || '' : ''}
                 onChange={(e) =>
                   updateField('paymentMethodDetails', e.target.value)
                 }
-                className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100"
+                className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-[#161619]"
               />
             </div>
-          </div>
+          </fieldset>
         </div>
 
         {/* Client / Buyer Information */}

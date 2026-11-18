@@ -128,12 +128,32 @@ export const DataSettingsModal: React.FC<DataSettingsModalProps> = ({
       return;
     }
 
+    if (result.backup.defaultSeller) {
+      setSeller((prev) => ({ ...prev, ...result.backup!.defaultSeller }));
+    }
+    if (result.backup.defaultBank) {
+      setBank((prev) => ({ ...prev, ...result.backup!.defaultBank }));
+    }
+    if (typeof result.backup.defaultTermsAndConditions === 'string') {
+      setDefaultTerms(result.backup.defaultTermsAndConditions);
+    }
+    if (Array.isArray(result.backup.catalog)) {
+      setCatalogItems(result.backup.catalog);
+    }
+
     onImportBackup(result.backup, importMode);
+    const count = result.invoices?.length || 0;
+    const extras: string[] = [];
+    if (result.backup.defaultSeller) extras.push('seller profile');
+    if (result.backup.defaultBank) extras.push('bank details');
+    if (Array.isArray(result.backup.catalog)) {
+      extras.push(`${result.backup.catalog.length} catalog item(s)`);
+    }
     setImportStatus({
       type: 'success',
-      message: `Successfully imported ${
-        result.invoices?.length || 0
-      } invoice(s) (${importMode === 'merge' ? 'merged with existing' : 'replaced archive'}).`,
+      message: `Successfully imported ${count} invoice(s)${
+        extras.length > 0 ? ` along with ${extras.join(', ')}` : ''
+      } (${importMode === 'merge' ? 'merged with existing' : 'replaced archive'}).`,
     });
     setRawJsonInput('');
   };
@@ -143,12 +163,19 @@ export const DataSettingsModal: React.FC<DataSettingsModalProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
+    reader.onerror = () => {
+      setImportStatus({
+        type: 'error',
+        message: 'Failed to read the selected JSON file.',
+      });
+    };
     reader.onload = () => {
       if (typeof reader.result === 'string') {
         processJsonImport(reader.result);
       }
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleSellerLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

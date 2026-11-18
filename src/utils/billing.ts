@@ -34,6 +34,7 @@ export interface InvoiceSummaryCalculation {
   totalPackages: number;
   totalUnits: number;
   merchandiseSubtotal: number;
+  lineTaxableSubtotal: number;
   packagingSubtotal: number;
   itemDiscountTotal: number;
   itemPreTaxDiscountTotal: number;
@@ -778,6 +779,7 @@ export function calculateInvoiceSummary(invoice: Invoice): InvoiceSummaryCalcula
     totalPackages,
     totalUnits,
     merchandiseSubtotal,
+    lineTaxableSubtotal,
     packagingSubtotal,
     itemDiscountTotal,
     itemPreTaxDiscountTotal,
@@ -841,18 +843,51 @@ export function formatCurrency(amount: number, _currency = 'INR'): string {
 }
 
 export function formatPdfCurrency(amount: number): string {
-  const safeAmount = Number.isFinite(amount) ? amount : 0;
-  const isNegative = safeAmount < 0;
-  const absVal = Math.abs(safeAmount);
-  try {
-    const formattedNumber = new Intl.NumberFormat('en-IN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(absVal);
-    return `${isNegative ? '-' : ''}Rs. ${formattedNumber}`;
-  } catch {
-    return `${isNegative ? '-' : ''}Rs. ${absVal.toFixed(2)}`;
+  return formatCurrency(amount, 'INR');
+}
+
+export interface ItemNameTypography {
+  isLong: boolean;
+  isVeryLong: boolean;
+  pdfFontSizePt: number;
+  pdfLineHeightMm: number;
+  previewFontClass: string;
+}
+
+/**
+ * Determines the font size and line-height scaling for line-item names in the PDF table
+ * so long item names wrap across multiple lines in a smaller font instead of being cut short.
+ */
+export function getItemNameTypography(
+  name: string,
+  maxSingleLineChars = 28
+): ItemNameTypography {
+  const len = (name || '').trim().length;
+  if (len > 56) {
+    return {
+      isLong: true,
+      isVeryLong: true,
+      pdfFontSizePt: 6.4,
+      pdfLineHeightMm: 3.1,
+      previewFontClass: 'text-[9.5px] leading-tight',
+    };
   }
+  if (len > maxSingleLineChars) {
+    return {
+      isLong: true,
+      isVeryLong: false,
+      pdfFontSizePt: 6.9,
+      pdfLineHeightMm: 3.3,
+      previewFontClass: 'text-[10px] leading-snug',
+    };
+  }
+  return {
+    isLong: false,
+    isVeryLong: false,
+    pdfFontSizePt: 7.8,
+    pdfLineHeightMm: 3.7,
+    previewFontClass: 'text-[11px] leading-snug',
+  };
 }
 
 const ONES = [
@@ -981,19 +1016,29 @@ export function formatBuyerDisplayName(invoice: Invoice): string {
 }
 
 export function formatPaymentMethodSummary(invoice: Invoice): string {
+  if (invoice.status !== 'Paid') {
+    return '';
+  }
   const method = (invoice.paymentMethod || '').trim();
-  if (!method && !(invoice.paymentMethodDetails || '').trim()) {
+  const details = (invoice.paymentMethodDetails || '').trim();
+  const payDate = (invoice.paymentDate || '').trim();
+  if (!method && !details && !payDate) {
     return '';
   }
   const baseLabel =
     method === 'Other'
       ? (invoice.paymentMethodOther || '').trim() || 'Other'
       : method;
-  const details = (invoice.paymentMethodDetails || '').trim();
+  let result = '';
   if (baseLabel && details) {
-    return `${baseLabel} (${details})`;
+    result = `${baseLabel} (${details})`;
+  } else {
+    result = baseLabel || details;
   }
-  return baseLabel || details;
+  if (payDate) {
+    result = result ? `${result} · Paid on ${payDate}` : `Paid on ${payDate}`;
+  }
+  return result;
 }
 
 export function filterAndSortInvoices(
@@ -1020,6 +1065,7 @@ export function filterAndSortInvoices(
         inv.purchaseOrderNumber,
         inv.paymentMethod,
         inv.paymentMethodOther,
+        inv.paymentDate,
         inv.paymentMethodDetails,
         ...inv.items.map((i) => i.name),
         ...inv.items.map((i) => i.skuOrHsn),
@@ -1071,31 +1117,104 @@ export function filterAndSortInvoices(
   });
 }
 
-export function normalizeInvoiceRecord(raw: Invoice): Invoice {
+export function normalizeCatalogItem(
+  raw: Partial<CatalogItem>,
+  fallbackIndex = 0
+): CatalogItem {
+  const taxPercent = roundCurrency(
+    Math.min(100, Math.max(0, Number(raw.taxPercent ?? 18) || 0))
+  );
+  const hasIncl =
+    raw.unitPriceInclusive !== undefined &&
+    Number.isFinite(Number(raw.unitPriceInclusive)) &&
+    Number(raw.unitPriceInclusive) >= 0;
+  const hasExcl =
+    raw.unitPrice !== undefined &&
+    Number.isFinite(Number(raw.unitPrice)) &&
+    Number(raw.unitPrice) >= 0;
+
+  let unitPrice = hasExcl ? roundCurrency(Number(raw.unitPrice)) : 0;
+  let unitPriceInclusive = hasIncl
+    ? roundCurrency(Number(raw.unitPriceInclusive))
+    : roundCurrency(unitPrice * (1 + taxPercent / 100));
+
+  if (hasIncl && !hasExcl) {
+    unitPrice = roundCurrency(unitPriceInclusive / (1 + taxPercent / 100));
+  } else if (hasExcl && !hasIncl) {
+    unitPriceInclusive = roundCurrency(unitPrice * (1 + taxPercent / 100));
+  }
+
+  return {
+    id: raw.id || `cat-${Date.now()}-${fallbackIndex}`,
+    name: String(raw.name || 'Catalog Item').trim(),
+    skuOrHsn: String(raw.skuOrHsn || '').trim(),
+    packagingType: (raw.packagingType as PackagingType) || 'Box',
+    unitsPerPackage: 1,
+    unitPrice,
+    unitPriceInclusive,
+    packagingCostPerPkg: 0,
+    taxPercent,
+  };
+}
+
+export function normalizeInvoiceRecord(
+  raw: Invoice,
+  fallbackIndex = 0
+): Invoice {
   const taxMode = normalizeTaxMode(raw.taxMode);
-  const items: InvoiceLineItem[] = (raw.items || []).map((item) => {
-    const baseTax = Number(item.taxPercent) || 0;
+  const nowIso = new Date().toISOString();
+  const todayStr = nowIso.slice(0, 10);
+
+  const items: InvoiceLineItem[] = (raw.items || []).map((item, idx) => {
+    const baseTax = Number(item.taxPercent ?? 18) || 0;
     const cgst =
-      item.cgstPercent !== undefined ? Number(item.cgstPercent) : roundCurrency(baseTax / 2);
+      item.cgstPercent !== undefined
+        ? Number(item.cgstPercent)
+        : roundCurrency(baseTax / 2);
     const sgst =
       item.sgstPercent !== undefined
         ? Number(item.sgstPercent)
         : roundCurrency(baseTax - cgst);
-    const igst = item.igstPercent !== undefined ? Number(item.igstPercent) : baseTax;
-    const effectiveRate = taxMode === 'CGST_SGST' ? cgst + sgst : taxMode === 'IGST' ? igst : 0;
-    const unitPrice = Number(item.unitPrice) || 0;
+    const igst =
+      item.igstPercent !== undefined ? Number(item.igstPercent) : baseTax;
+    const effectiveRate =
+      taxMode === 'CGST_SGST' ? cgst + sgst : taxMode === 'IGST' ? igst : 0;
+
+    const quantity = Math.max(0, Number(item.quantity ?? item.packageCount ?? 1) || 0);
+    const unitPrice = Math.max(0, Number(item.unitPrice) || 0);
     const unitPriceInclusive =
-      item.unitPriceInclusive !== undefined
-        ? Number(item.unitPriceInclusive)
+      item.unitPriceInclusive !== undefined &&
+      Number.isFinite(Number(item.unitPriceInclusive))
+        ? Math.max(0, Number(item.unitPriceInclusive))
         : roundCurrency(unitPrice * (1 + effectiveRate / 100));
 
-    const discountAmount =
-      item.discountAmount !== undefined
-        ? Math.max(0, Number(item.discountAmount) || 0)
-        : 0;
+    let discountAmount = 0;
+    if (
+      item.discountAmount !== undefined &&
+      Number.isFinite(Number(item.discountAmount))
+    ) {
+      discountAmount = Math.max(0, Number(item.discountAmount));
+    } else if (
+      item.discountPercent !== undefined &&
+      Number(item.discountPercent) > 0
+    ) {
+      // Legacy v1 compatibility: convert discountPercent into rupee discount on final value
+      const grossIncl = roundCurrency(quantity * unitPriceInclusive);
+      discountAmount = roundCurrency(
+        grossIncl * (Math.min(100, Number(item.discountPercent)) / 100)
+      );
+    }
 
     return {
       ...item,
+      id: item.id || `item-${Date.now()}-${fallbackIndex}-${idx}`,
+      name: String(item.name || ''),
+      description: item.description ? String(item.description) : '',
+      skuOrHsn: String(item.skuOrHsn || ''),
+      packagingType: (item.packagingType as PackagingType) || 'Box',
+      unitsPerPackage: 1,
+      packageCount: quantity,
+      quantity,
       priceEntryMode: item.priceEntryMode || 'EXCLUSIVE',
       unitPrice,
       unitPriceInclusive,
@@ -1109,25 +1228,101 @@ export function normalizeInvoiceRecord(raw: Invoice): Invoice {
     };
   });
 
-  const isPaid = raw.status === 'Paid';
+  const validStatuses = ['Paid', 'Pending', 'Overdue'] as const;
+  const status = validStatuses.includes(raw.status as (typeof validStatuses)[number])
+    ? (raw.status as (typeof validStatuses)[number])
+    : 'Pending';
+  const isPaid = status === 'Paid';
   const isCashCustomer = Boolean(raw.isCashCustomer);
+
+  const rawSeller: Partial<Invoice['seller']> = raw.seller || {};
+  const rawBuyer: Partial<Invoice['buyer']> = raw.buyer || {};
+  const rawBank: Partial<Invoice['bankDetails']> = raw.bankDetails || {};
+  const rawPdf: Partial<Invoice['pdfOptions']> = raw.pdfOptions || {};
 
   return {
     ...raw,
+    id:
+      raw.id ||
+      `inv-${String(raw.invoiceNumber || '0').replace(/[^a-zA-Z0-9_-]/g, '')}-${fallbackIndex}`,
+    invoiceNumber: String(raw.invoiceNumber || `INV-${fallbackIndex + 1}`).trim(),
+    issueDate: raw.issueDate || todayStr,
+    dueDate: isPaid ? '' : raw.dueDate || '',
+    status,
     currency: 'INR',
     taxMode,
-    dueDate: isPaid ? '' : raw.dueDate || '',
+    placeOfSupply:
+      raw.placeOfSupply !== undefined ? String(raw.placeOfSupply) : '27 - Maharashtra',
+    purchaseOrderNumber: raw.purchaseOrderNumber
+      ? String(raw.purchaseOrderNumber)
+      : '',
     isCashCustomer,
-    paymentMethod: raw.paymentMethod || '',
-    paymentMethodOther: raw.paymentMethodOther || '',
-    paymentMethodDetails: raw.paymentMethodDetails || '',
-    calculateDiscountOnFinalValue: raw.calculateDiscountOnFinalValue ?? true,
+    paymentMethod: isPaid ? raw.paymentMethod || '' : '',
+    paymentMethodOther: isPaid ? raw.paymentMethodOther || '' : '',
+    paymentDate: isPaid ? raw.paymentDate || '' : '',
+    paymentMethodDetails: isPaid ? raw.paymentMethodDetails || '' : '',
+    calculateDiscountOnFinalValue: true,
+    seller: {
+      name: String(rawSeller.name || ''),
+      companyName: String(rawSeller.companyName || ''),
+      taxId: String(rawSeller.taxId || ''),
+      email: String(rawSeller.email || ''),
+      phone: String(rawSeller.phone || ''),
+      addressLine1: String(rawSeller.addressLine1 || ''),
+      cityStatePostal: String(rawSeller.cityStatePostal || ''),
+      country: String(rawSeller.country || 'India'),
+      logoDataUrl: rawSeller.logoDataUrl || '',
+    },
+    buyer: {
+      name: String(rawBuyer.name || ''),
+      companyName: String(rawBuyer.companyName || ''),
+      taxId: String(rawBuyer.taxId || ''),
+      email: String(rawBuyer.email || ''),
+      phone: String(rawBuyer.phone || ''),
+      addressLine1: String(rawBuyer.addressLine1 || ''),
+      cityStatePostal: String(rawBuyer.cityStatePostal || ''),
+      country: String(rawBuyer.country || 'India'),
+    },
+    bankDetails: {
+      bankName: String(rawBank.bankName || ''),
+      accountName: String(rawBank.accountName || ''),
+      accountNumber: String(rawBank.accountNumber || ''),
+      routingOrIfsc: String(rawBank.routingOrIfsc || ''),
+      swiftOrIban: rawBank.swiftOrIban ? String(rawBank.swiftOrIban) : '',
+      paymentInstructions: rawBank.paymentInstructions
+        ? String(rawBank.paymentInstructions)
+        : '',
+    },
     shippingAndHandling: 0,
+    additionalDiscountAmount: Math.max(
+      0,
+      Number(raw.additionalDiscountAmount) || 0
+    ),
+    roundOff: raw.roundOff ?? true,
+    notes: raw.notes ? String(raw.notes) : '',
+    termsAndConditions: raw.termsAndConditions
+      ? String(raw.termsAndConditions)
+      : '',
     pdfOptions: {
-      ...raw.pdfOptions,
-      showSellerLogo: raw.pdfOptions?.showSellerLogo ?? true,
+      paperSize: rawPdf.paperSize || 'a4',
+      orientation: rawPdf.orientation || 'portrait',
+      marginPreset: rawPdf.marginPreset || 'standard',
+      accentColor: rawPdf.accentColor || 'slate',
+      headerTitle: rawPdf.headerTitle || 'TAX INVOICE',
+      showSellerLogo: rawPdf.showSellerLogo ?? true,
+      showSkuColumn: rawPdf.showSkuColumn ?? true,
+      showPackagingColumn: rawPdf.showPackagingColumn ?? true,
+      showDiscountColumn: rawPdf.showDiscountColumn ?? true,
+      showTaxBreakdown: rawPdf.showTaxBreakdown ?? true,
+      showAmountInWords: rawPdf.showAmountInWords ?? true,
+      showBankDetails: rawPdf.showBankDetails ?? true,
+      showSignatureBlock: rawPdf.showSignatureBlock ?? true,
+      signatoryLabel: rawPdf.signatoryLabel || 'Authorized Signatory',
+      footerNote: rawPdf.footerNote ?? '',
     },
     items,
+    createdAt: raw.createdAt || nowIso,
+    updatedAt: raw.updatedAt || nowIso,
   };
 }
 
@@ -1139,12 +1334,21 @@ export function validateAndParseBackupJson(rawJson: string): {
 } {
   try {
     const parsed = JSON.parse(rawJson);
+    if (!parsed || typeof parsed !== 'object') {
+      return {
+        valid: false,
+        error: 'JSON file does not contain a valid backup object or invoices array.',
+      };
+    }
 
-    const candidateInvoices: unknown[] = Array.isArray(parsed)
+    // Support: (1) full backup object { invoices: [...] }, (2) raw array of invoices [...], or (3) a single invoice object { invoiceNumber, items }
+    const candidateInvoices: unknown[] | null = Array.isArray(parsed)
       ? parsed
       : Array.isArray(parsed?.invoices)
       ? parsed.invoices
-      : null!;
+      : typeof parsed?.invoiceNumber === 'string' && Array.isArray(parsed?.items)
+      ? [parsed]
+      : null;
 
     if (!candidateInvoices) {
       return {
@@ -1171,15 +1375,25 @@ export function validateAndParseBackupJson(rawJson: string): {
           error: `Invoice "${item.invoiceNumber}" is missing a line items array.`,
         };
       }
-      validatedInvoices.push(normalizeInvoiceRecord(item as Invoice));
+      validatedInvoices.push(normalizeInvoiceRecord(item as Invoice, i));
+    }
+
+    const backupObj: Partial<BilluminatiBackup> = Array.isArray(parsed)
+      ? { invoices: validatedInvoices }
+      : typeof parsed?.invoiceNumber === 'string' && !Array.isArray(parsed?.invoices)
+      ? { invoices: validatedInvoices }
+      : { ...parsed, invoices: validatedInvoices };
+
+    if (Array.isArray(backupObj.catalog)) {
+      backupObj.catalog = backupObj.catalog
+        .filter((c) => c && typeof c === 'object' && typeof c.name === 'string')
+        .map((c, idx) => normalizeCatalogItem(c, idx));
     }
 
     return {
       valid: true,
       invoices: validatedInvoices,
-      backup: Array.isArray(parsed)
-        ? { invoices: validatedInvoices }
-        : { ...parsed, invoices: validatedInvoices },
+      backup: backupObj,
     };
   } catch (err) {
     return {

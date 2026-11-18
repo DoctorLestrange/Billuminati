@@ -15,6 +15,7 @@ import {
   formatTaxModeLabel,
   generateNextInvoiceNumber,
   getCatalogItemInclusivePrice,
+  getItemNameTypography,
   normalizeInvoiceRecord,
   updateItemFromInclusiveRate,
   updateItemFromLineTotalInclusive,
@@ -282,9 +283,10 @@ test('calculateInvoiceSummary always calculates both line and additional discoun
   assert.equal(summary.merchandiseSubtotal, 10000);
   assert.equal(summary.itemDiscountTotal, 1180);
   assert.equal(summary.itemPreTaxDiscountTotal, 1000);
+  assert.equal(summary.lineTaxableSubtotal, 9000); // Subtotal with line item discounts deducted (matches sum of table Taxable Val)
   assert.equal(summary.additionalDiscountAmount, 1180);
   assert.equal(summary.additionalPreTaxDiscountAmount, 1000);
-  assert.equal(summary.taxableSubtotal, 8000); // 10,000 - 1,000 - 1,000
+  assert.equal(summary.taxableSubtotal, 8000); // 9,000 - 1,000 additional pre-tax discount
   assert.equal(summary.cgstTotal, 720);
   assert.equal(summary.sgstTotal, 720);
   assert.equal(summary.totalTax, 1440);
@@ -293,7 +295,7 @@ test('calculateInvoiceSummary always calculates both line and additional discoun
   assert.equal(summary.grandTotal, 9440);
 });
 
-test('Cash Customer option, Payment Method formatting, and Paid dueDate clearing work accurately', () => {
+test('Cash Customer option, Payment Method/Date formatting, Paid dueDate clearing, and Pending/Overdue payment clearing work accurately', () => {
   const cashInv = normalizeInvoiceRecord(
     makeSampleInvoice({
       status: 'Paid',
@@ -301,19 +303,50 @@ test('Cash Customer option, Payment Method formatting, and Paid dueDate clearing
       isCashCustomer: true,
       paymentMethod: 'Other',
       paymentMethodOther: 'NEFT Escrow',
+      paymentDate: '2026-11-16',
       paymentMethodDetails: 'Ref #99102',
     })
   );
 
-  // Paid status clears dueDate
+  // Paid status clears dueDate and preserves payment fields
   assert.equal(cashInv.dueDate, '');
+  assert.equal(cashInv.paymentDate, '2026-11-16');
   // Cash Customer overrides buyer display name
   assert.equal(formatBuyerDisplayName(cashInv), 'Cash Customer');
-  // Payment method summary formats custom Other method + details
+  // Payment method summary formats custom Other method + details + paymentDate
   assert.equal(
     formatPaymentMethodSummary(cashInv),
-    'NEFT Escrow (Ref #99102)'
+    'NEFT Escrow (Ref #99102) · Paid on 2026-11-16'
   );
+
+  // Pending or Overdue status clears paymentMethod, paymentMethodOther, paymentDate, and paymentMethodDetails
+  const pendingInv = normalizeInvoiceRecord(
+    makeSampleInvoice({
+      status: 'Pending',
+      paymentMethod: 'UPI',
+      paymentMethodOther: 'Custom',
+      paymentDate: '2026-11-16',
+      paymentMethodDetails: 'UTR 12345',
+    })
+  );
+  assert.equal(pendingInv.paymentMethod, '');
+  assert.equal(pendingInv.paymentMethodOther, '');
+  assert.equal(pendingInv.paymentDate, '');
+  assert.equal(pendingInv.paymentMethodDetails, '');
+  assert.equal(formatPaymentMethodSummary(pendingInv), '');
+
+  const overdueInv = normalizeInvoiceRecord(
+    makeSampleInvoice({
+      status: 'Overdue',
+      paymentMethod: 'Cash',
+      paymentDate: '2026-11-10',
+      paymentMethodDetails: 'Receipt #55',
+    })
+  );
+  assert.equal(overdueInv.paymentMethod, '');
+  assert.equal(overdueInv.paymentDate, '');
+  assert.equal(overdueInv.paymentMethodDetails, '');
+  assert.equal(formatPaymentMethodSummary(overdueInv), '');
 });
 
 test('createCatalogItemFromInclusivePrice and getCatalogItemInclusivePrice store tax-inclusive unit price and tax rate', () => {
@@ -386,18 +419,76 @@ test('generateNextInvoiceNumber and filterAndSortInvoices work accurately', () =
   assert.equal(bySearch[0].id, '2');
 });
 
-test('validateAndParseBackupJson and format helpers work cleanly', () => {
-  const inv = makeSampleInvoice();
-  const validJson = JSON.stringify({
+test('validateAndParseBackupJson supports full backup objects, raw arrays, single invoices, and catalog normalization', () => {
+  const inv = makeSampleInvoice({ status: 'Paid', dueDate: '2026-12-10' });
+  const fullBackupJson = JSON.stringify({
     version: 2,
     app: 'Billuminati',
     invoices: [inv],
+    defaultTermsAndConditions: 'Subject to Mumbai Jurisdiction.',
+    catalog: [
+      {
+        id: 'cat-legacy',
+        name: 'Industrial Tin Pack',
+        skuOrHsn: '32089090',
+        packagingType: 'Tin',
+        unitPriceInclusive: 1180,
+        taxPercent: 18,
+      },
+    ],
   });
 
-  const parsed = validateAndParseBackupJson(validJson);
-  assert.equal(parsed.valid, true);
-  assert.equal(parsed.invoices?.length, 1);
+  const parsedFull = validateAndParseBackupJson(fullBackupJson);
+  assert.equal(parsedFull.valid, true);
+  assert.equal(parsedFull.invoices?.length, 1);
+  // Paid invoice due date is automatically normalized to empty string
+  assert.equal(parsedFull.invoices?.[0].dueDate, '');
+  assert.equal(
+    parsedFull.backup?.defaultTermsAndConditions,
+    'Subject to Mumbai Jurisdiction.'
+  );
+  assert.equal(parsedFull.backup?.catalog?.[0].unitPrice, 1000);
+  assert.equal(parsedFull.backup?.catalog?.[0].unitPriceInclusive, 1180);
+
+  // Also supports importing a single invoice JSON object directly
+  const singleInvParsed = validateAndParseBackupJson(JSON.stringify(inv));
+  assert.equal(singleInvParsed.valid, true);
+  assert.equal(singleInvParsed.invoices?.length, 1);
+
+  // Rejects invalid JSON cleanly
+  const invalidParsed = validateAndParseBackupJson('{ bad json');
+  assert.equal(invalidParsed.valid, false);
+
   assert.equal(formatPackagePlural('Box', 3), 'Boxes');
   assert.equal(formatTaxModeLabel('CGST_SGST'), 'CGST + SGST');
   assert.equal(formatTaxModeLabel('IGST'), 'IGST');
 });
+
+test('getItemNameTypography scales font size down and preserves multi-line wrapping for long item names', () => {
+  const shortTypo = getItemNameTypography('Hex Bolt M8');
+  assert.equal(shortTypo.isLong, false);
+  assert.equal(shortTypo.pdfFontSizePt, 7.8);
+
+  const medTypo = getItemNameTypography(
+    'Anodized Aluminum Enclosure (IP67 Marine Rated)'
+  );
+  assert.equal(medTypo.isLong, true);
+  assert.equal(medTypo.isVeryLong, false);
+  assert.equal(medTypo.pdfFontSizePt, 6.9);
+
+  const veryLongName =
+    'Ultra-High-Purity Anhydrous Optical Sensor Calibration Solvent & Dielectric Cleaning Reagent (Industrial Grade 500ml)';
+  const longTypo = getItemNameTypography(veryLongName);
+  assert.equal(longTypo.isLong, true);
+  assert.equal(longTypo.isVeryLong, true);
+  assert.equal(longTypo.pdfFontSizePt, 6.4);
+
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  registerIbmPlexSerif(doc);
+  doc.setFont(PDF_FONT_FAMILY, 'bold');
+  doc.setFontSize(longTypo.pdfFontSizePt);
+  const lines: string[] = doc.splitTextToSize(veryLongName, 40);
+  assert.ok(lines.length >= 2);
+  assert.ok(lines.join(' ').includes('Industrial Grade 500ml'));
+});
+

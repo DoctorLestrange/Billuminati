@@ -57,7 +57,7 @@ export type TaxMode = 'CGST_SGST' | 'IGST' | 'EXEMPT';
 
 export type PriceEntryMode = 'EXCLUSIVE' | 'INCLUSIVE';
 
-export type InvoiceStatus = 'Paid' | 'Pending' | 'Overdue' | 'Draft';
+export type InvoiceStatus = 'Paid' | 'Pending' | 'Overdue';
 
 export type PaymentMethodType =
   | ''
@@ -152,6 +152,7 @@ export interface Invoice {
   isCashCustomer?: boolean;
   paymentMethod?: PaymentMethodType;
   paymentMethodOther?: string;
+  paymentDate?: string; // YYYY-MM-DD (cleared when status is Pending or Overdue)
   paymentMethodDetails?: string;
   calculateDiscountOnFinalValue?: boolean;
   seller: PartyDetails;

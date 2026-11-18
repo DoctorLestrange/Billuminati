@@ -43,7 +43,6 @@ const STATUS_TABS: Array<'All' | InvoiceStatus> = [
   'Paid',
   'Pending',
   'Overdue',
-  'Draft',
 ];
 
 const DATE_PRESETS: Array<{ id: DateFilterPreset; label: string }> = [
@@ -95,8 +94,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         return 'text-amber-700 dark:text-amber-400';
       case 'Overdue':
         return 'text-red-700 dark:text-red-400';
-      case 'Draft':
-        return 'text-zinc-600 dark:text-zinc-400';
     }
   };
 
@@ -367,7 +364,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </button>
                         <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
                           {formatTaxModeLabel(inv.taxMode)}
-                          {inv.purchaseOrderNumber
+                          {!inv.isCashCustomer && inv.purchaseOrderNumber
                             ? ` · ${inv.purchaseOrderNumber}`
                             : ''}
                         </div>
@@ -396,13 +393,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <div className="text-zinc-800 dark:text-zinc-200">
                           {inv.issueDate}
                         </div>
-                        {inv.status !== 'Paid' && inv.dueDate ? (
+                        {inv.status === 'Paid' ? (
+                          <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                            {inv.paymentDate ? `Settled (${inv.paymentDate})` : 'Settled'}
+                          </div>
+                        ) : inv.dueDate ? (
                           <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
                             Due {inv.dueDate}
                           </div>
                         ) : (
                           <div className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                            Settled
+                            No due date
                           </div>
                         )}
                       </td>
@@ -433,7 +434,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <option value="Paid" className="bg-white dark:bg-[#18181b] text-zinc-900 dark:text-zinc-100">Paid</option>
                           <option value="Pending" className="bg-white dark:bg-[#18181b] text-zinc-900 dark:text-zinc-100">Pending</option>
                           <option value="Overdue" className="bg-white dark:bg-[#18181b] text-zinc-900 dark:text-zinc-100">Overdue</option>
-                          <option value="Draft" className="bg-white dark:bg-[#18181b] text-zinc-900 dark:text-zinc-100">Draft</option>
                         </select>
                       </td>
 
