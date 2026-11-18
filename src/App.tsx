@@ -33,12 +33,12 @@ import { PdfPreviewModal } from './components/PdfPreviewModal';
 import { DataSettingsModal } from './components/DataSettingsModal';
 
 const STORAGE_KEYS = {
-  INVOICES: 'billuminati_invoices_inr_v3',
-  SELLER: 'billuminati_default_seller_inr_v2',
-  BANK: 'billuminati_default_bank_inr_v2',
-  PDF_OPTS: 'billuminati_default_pdf_inr_v2',
-  TERMS: 'billuminati_default_terms_inr_v1',
-  CATALOG: 'billuminati_catalog_inr_v2',
+  INVOICES: 'billuminati_invoices_clean_v1',
+  SELLER: 'billuminati_default_seller_clean_v1',
+  BANK: 'billuminati_default_bank_clean_v1',
+  PDF_OPTS: 'billuminati_default_pdf_clean_v1',
+  TERMS: 'billuminati_default_terms_clean_v1',
+  CATALOG: 'billuminati_catalog_clean_v1',
   THEME: 'billuminati_theme_v1',
 };
 
@@ -166,7 +166,7 @@ export default function App() {
       status: 'Pending',
       currency: 'INR',
       taxMode: 'CGST_SGST',
-      placeOfSupply: '27 - Maharashtra',
+      placeOfSupply: '',
       purchaseOrderNumber: '',
       isCashCustomer: false,
       paymentMethod: '',
@@ -194,8 +194,8 @@ export default function App() {
           skuOrHsn: '',
           packagingType: 'Box',
           unitsPerPackage: 1,
-          packageCount: 10,
-          quantity: 10,
+          packageCount: 1,
+          quantity: 1,
           priceEntryMode: 'EXCLUSIVE',
           unitPrice: 0,
           unitPriceInclusive: 0,

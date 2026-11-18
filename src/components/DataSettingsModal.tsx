@@ -86,7 +86,7 @@ export const DataSettingsModal: React.FC<DataSettingsModalProps> = ({
   const [newCatName, setNewCatName] = useState('');
   const [newCatSku, setNewCatSku] = useState('');
   const [newCatPkg, setNewCatPkg] = useState<PackagingType>('Box');
-  const [newCatPriceIncl, setNewCatPriceIncl] = useState(1180);
+  const [newCatPriceIncl, setNewCatPriceIncl] = useState(0);
   const [newCatTax, setNewCatTax] = useState(18);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -713,7 +713,7 @@ export const DataSettingsModal: React.FC<DataSettingsModalProps> = ({
                       id="cat-item-name"
                       type="text"
                       required
-                      placeholder="e.g. Dielectric Coolant (20L)"
+                      placeholder="Product or Service Name"
                       value={newCatName}
                       onChange={(e) => setNewCatName(e.target.value)}
                       className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100"
@@ -729,7 +729,7 @@ export const DataSettingsModal: React.FC<DataSettingsModalProps> = ({
                     <input
                       id="cat-item-sku"
                       type="text"
-                      placeholder="27101980"
+                      placeholder="HSN / SAC"
                       value={newCatSku}
                       onChange={(e) => setNewCatSku(e.target.value)}
                       className="w-full px-2.5 py-1.5 font-mono rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100"
@@ -814,37 +814,43 @@ export const DataSettingsModal: React.FC<DataSettingsModalProps> = ({
               </form>
 
               <div className="divide-y divide-zinc-200 dark:divide-[#2a2a2e] border border-zinc-200 dark:border-[#2a2a2e] rounded-xl overflow-hidden">
-                {catalogItems.map((item) => {
-                  const inclPrice = getCatalogItemInclusivePrice(item);
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-[#18181b]"
-                    >
-                      <div>
-                        <div className="font-semibold text-zinc-900 dark:text-zinc-100">
-                          {item.name}
-                        </div>
-                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono mt-0.5">
-                          HSN/SAC: {item.skuOrHsn || '—'} · Packaging:{' '}
-                          {item.packagingType} · Unit Price (Incl. Tax):{' '}
-                          <strong className="text-zinc-800 dark:text-zinc-200">
-                            {formatCurrency(inclPrice)}
-                          </strong>{' '}
-                          (Excl: {formatCurrency(item.unitPrice)}) · Tax: {item.taxPercent}%
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveCatalogItem(item.id)}
-                        aria-label={`Remove ${item.name} from catalog`}
-                        className="p-1.5 text-zinc-400 hover:text-red-600 rounded-md transition-colors cursor-pointer"
+                {catalogItems.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400 bg-white dark:bg-[#18181b]">
+                    No saved catalog presets yet. Add an item above to enable quick-fill in the invoice editor.
+                  </div>
+                ) : (
+                  catalogItems.map((item) => {
+                    const inclPrice = getCatalogItemInclusivePrice(item);
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between px-4 py-3 bg-white dark:bg-[#18181b]"
                       >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  );
-                })}
+                        <div>
+                          <div className="font-semibold text-zinc-900 dark:text-zinc-100">
+                            {item.name}
+                          </div>
+                          <div className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono mt-0.5">
+                            HSN/SAC: {item.skuOrHsn || '—'} · Packaging:{' '}
+                            {item.packagingType} · Unit Price (Incl. Tax):{' '}
+                            <strong className="text-zinc-800 dark:text-zinc-200">
+                              {formatCurrency(inclPrice)}
+                            </strong>{' '}
+                            (Excl: {formatCurrency(item.unitPrice)}) · Tax: {item.taxPercent}%
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCatalogItem(item.id)}
+                          aria-label={`Remove ${item.name} from catalog`}
+                          className="p-1.5 text-zinc-400 hover:text-red-600 rounded-md transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}

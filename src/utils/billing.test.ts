@@ -492,3 +492,31 @@ test('getItemNameTypography scales font size down and preserves multi-line wrapp
   assert.ok(lines.join(' ').includes('Industrial Grade 500ml'));
 });
 
+test('initial defaults start completely clean with no sample bills, fake company, or catalog items', async () => {
+  const {
+    DEFAULT_SELLER,
+    DEFAULT_BANK,
+    DEFAULT_PDF_OPTIONS,
+    DEFAULT_TERMS_AND_CONDITIONS,
+    INITIAL_CATALOG,
+    INITIAL_INVOICES,
+  } = await import('../data/seedData');
+
+  assert.equal(INITIAL_INVOICES.length, 0);
+  assert.equal(INITIAL_CATALOG.length, 0);
+  assert.equal(DEFAULT_SELLER.companyName, '');
+  assert.equal(DEFAULT_SELLER.name, '');
+  assert.equal(DEFAULT_SELLER.taxId, '');
+  assert.equal(DEFAULT_SELLER.email, '');
+  assert.equal(DEFAULT_SELLER.phone, '');
+  assert.equal(DEFAULT_SELLER.addressLine1, '');
+  assert.equal(DEFAULT_SELLER.cityStatePostal, '');
+  assert.equal(DEFAULT_BANK.bankName, '');
+  assert.equal(DEFAULT_BANK.accountName, '');
+  assert.equal(DEFAULT_BANK.accountNumber, '');
+  assert.equal(DEFAULT_BANK.routingOrIfsc, '');
+  assert.equal(DEFAULT_PDF_OPTIONS.footerNote, '');
+  assert.equal(DEFAULT_TERMS_AND_CONDITIONS, '');
+});
+
+

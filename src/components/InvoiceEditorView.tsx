@@ -973,7 +973,9 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
               <Building2 className="w-3.5 h-3.5" />
               {showSellerBankPanel
                 ? 'Hide Seller, Logo & Bank Details'
-                : `Seller: ${invoice.seller.companyName} (Click to customize seller & logo)`}
+                : `Seller: ${
+                    invoice.seller.companyName.trim() || 'Not Configured'
+                  } (Click to customize seller & logo)`}
               {showSellerBankPanel ? (
                 <ChevronDown className="w-3.5 h-3.5" />
               ) : (
@@ -998,7 +1000,7 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 id="buyer-company"
                 type="text"
                 disabled={isCashCustomer}
-                placeholder="e.g. Sahyadri Kinetics Pvt. Ltd."
+                placeholder="Client / Buyer Company Name"
                 value={isCashCustomer ? 'Cash Customer' : invoice.buyer.companyName}
                 onChange={(e) =>
                   updateBuyerField('companyName', e.target.value)
@@ -1018,7 +1020,7 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 id="buyer-name"
                 type="text"
                 disabled={isCashCustomer}
-                placeholder="e.g. Vikram Kulkarni"
+                placeholder="Contact Person Name"
                 value={isCashCustomer ? '' : invoice.buyer.name}
                 onChange={(e) => updateBuyerField('name', e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-[#161619]"
@@ -1036,7 +1038,7 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 id="buyer-tax-id"
                 type="text"
                 disabled={isCashCustomer}
-                placeholder="e.g. 27AADCS4491K1Z2"
+                placeholder="15-digit GSTIN (Optional)"
                 value={isCashCustomer ? '' : invoice.buyer.taxId}
                 onChange={(e) => updateBuyerField('taxId', e.target.value)}
                 className="w-full px-3 py-2 font-mono rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-[#161619]"
@@ -1074,7 +1076,7 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 id="buyer-address"
                 type="text"
                 disabled={isCashCustomer}
-                placeholder="Plot No., MIDC / Industrial Estate, Street"
+                placeholder="Building, Street, Area"
                 value={isCashCustomer ? '' : invoice.buyer.addressLine1}
                 onChange={(e) =>
                   updateBuyerField('addressLine1', e.target.value)
@@ -1094,7 +1096,7 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 id="buyer-city"
                 type="text"
                 disabled={isCashCustomer}
-                placeholder="Pune, Maharashtra - 410501"
+                placeholder="City, State - PIN Code"
                 value={isCashCustomer ? '' : invoice.buyer.cityStatePostal}
                 onChange={(e) =>
                   updateBuyerField('cityStatePostal', e.target.value)
@@ -1114,7 +1116,7 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 id="inv-place-supply"
                 type="text"
                 disabled={isCashCustomer}
-                placeholder="e.g. 27 - Maharashtra"
+                placeholder="State & GST State Code"
                 value={invoice.placeOfSupply}
                 onChange={(e) => updateField('placeOfSupply', e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-[#323238] bg-white dark:bg-[#222226] text-zinc-900 dark:text-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-[#161619]"

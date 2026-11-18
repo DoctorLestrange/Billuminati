@@ -626,7 +626,12 @@ export function exportInvoiceToPdf(
     doc.setFont(PDF_FONT_FAMILY, 'bold');
     doc.setFontSize(8.2);
     doc.setTextColor(39, 39, 42);
-    const bankHeaderLine = `${invoice.bankDetails.bankName} — ${invoice.bankDetails.accountName}`;
+    const bankHeaderLine = [
+      invoice.bankDetails.bankName,
+      invoice.bankDetails.accountName,
+    ]
+      .filter(Boolean)
+      .join(' — ');
     const wrappedBankHeader = doc.splitTextToSize(bankHeaderLine, leftWidth);
     doc.text(wrappedBankHeader, margin, leftY);
     leftY += wrappedBankHeader.length * 3.9;
@@ -764,15 +769,17 @@ export function exportInvoiceToPdf(
       sigLineY + 4.5,
       { align: 'right' }
     );
-    doc.setFont(PDF_FONT_FAMILY, 'normal');
-    doc.setFontSize(7.6);
-    doc.setTextColor(113, 113, 122);
-    doc.text(
-      `For ${invoice.seller.companyName}`,
-      pageWidth - margin,
-      sigLineY + 8.5,
-      { align: 'right' }
-    );
+    if (invoice.seller.companyName) {
+      doc.setFont(PDF_FONT_FAMILY, 'normal');
+      doc.setFontSize(7.6);
+      doc.setTextColor(113, 113, 122);
+      doc.text(
+        `For ${invoice.seller.companyName}`,
+        pageWidth - margin,
+        sigLineY + 8.5,
+        { align: 'right' }
+      );
+    }
   }
 
   // Footer Note

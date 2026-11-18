@@ -485,8 +485,12 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                       </p>
                       <div className="text-zinc-600 space-y-0.5">
                         <p className="font-medium text-zinc-800">
-                          {invoice.bankDetails.bankName} —{' '}
-                          {invoice.bankDetails.accountName}
+                          {[
+                            invoice.bankDetails.bankName,
+                            invoice.bankDetails.accountName,
+                          ]
+                            .filter(Boolean)
+                            .join(' — ')}
                         </p>
                         <p className="text-[11px] tabular-nums">
                           A/C No: {invoice.bankDetails.accountNumber} · IFSC:{' '}
@@ -575,9 +579,11 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                     <p className="font-semibold text-zinc-800">
                       {options.signatoryLabel || 'Authorized Signatory'}
                     </p>
-                    <p className="text-[11px] text-zinc-500">
-                      For {invoice.seller.companyName}
-                    </p>
+                    {invoice.seller.companyName && (
+                      <p className="text-[11px] text-zinc-500">
+                        For {invoice.seller.companyName}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

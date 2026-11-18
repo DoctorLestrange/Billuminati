@@ -1252,7 +1252,7 @@ export function normalizeInvoiceRecord(
     currency: 'INR',
     taxMode,
     placeOfSupply:
-      raw.placeOfSupply !== undefined ? String(raw.placeOfSupply) : '27 - Maharashtra',
+      raw.placeOfSupply !== undefined ? String(raw.placeOfSupply) : '',
     purchaseOrderNumber: raw.purchaseOrderNumber
       ? String(raw.purchaseOrderNumber)
       : '',
