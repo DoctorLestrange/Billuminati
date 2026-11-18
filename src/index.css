@@ -1,16 +1,78 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --font-sans: 'Lora', Georgia, 'Times New Roman', serif;
+  --font-serif: 'Lora', Georgia, 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Remap slate & indigo palettes to pure neutral graphite so dark mode has zero blue tint */
+  --color-slate-50: #fafafa;
+  --color-slate-100: #f4f4f5;
+  --color-slate-200: #e4e4e7;
+  --color-slate-300: #d4d4d8;
+  --color-slate-400: #a1a1aa;
+  --color-slate-500: #71717a;
+  --color-slate-600: #52525b;
+  --color-slate-700: #3f3f46;
+  --color-slate-800: #262629;
+  --color-slate-900: #1a1a1d;
+  --color-slate-950: #111113;
+
+  --color-indigo-50: #f4f4f5;
+  --color-indigo-100: #e4e4e7;
+  --color-indigo-200: #d4d4d8;
+  --color-indigo-300: #d4d4d8;
+  --color-indigo-400: #e4e4e7;
+  --color-indigo-500: #52525b;
+  --color-indigo-600: #27272a;
+  --color-indigo-700: #18181b;
+  --color-indigo-800: #3f3f46;
+  --color-indigo-900: #27272a;
+  --color-indigo-950: #1f1f22;
+}
+
 @layer base {
   :root {
-    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-serif: 'Lora', Georgia, 'Times New Roman', serif;
+    --font-sans: 'Lora', Georgia, 'Times New Roman', serif;
+    --font-ui-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-brand: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-pdf: 'IBM Plex Serif', Georgia, serif;
     --font-mono: 'JetBrains Mono', monospace;
   }
 
   body {
-    font-family: var(--font-sans);
+    font-family: var(--font-serif);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background-color: #fafafa;
+    color: #18181b;
+  }
+
+  .dark body {
+    background-color: #111113;
+    color: #f4f4f5;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-serif);
+  }
+
+  /* Keep the top-left Billuminati. wordmark in its original Plus Jakarta Sans font */
+  .font-brand {
+    font-family: var(--font-brand) !important;
+  }
+
+  /* Optional utility for clean sans micro-labels when needed */
+  .font-ui-sans {
+    font-family: var(--font-ui-sans);
+  }
+
+  /* Strictly IBM Plex Serif for the PDF preview sheet */
+  .font-pdf,
+  .font-pdf * {
+    font-family: var(--font-pdf) !important;
   }
 
   .font-mono,
@@ -20,19 +82,19 @@
   }
 }
 
-/* Subtle low-contrast square ruled background pattern that never conflicts with UI elements */
+/* Subtle low-contrast square ruled background pattern tuned for graphite dark & warm light */
 .bg-square-ruled {
   background-size: 24px 24px;
   background-image: 
-    linear-gradient(to right, rgba(15, 23, 42, 0.038) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(15, 23, 42, 0.038) 1px, transparent 1px);
+    linear-gradient(to right, rgba(24, 24, 27, 0.036) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(24, 24, 27, 0.036) 1px, transparent 1px);
 }
 
 .dark .bg-square-ruled {
   background-size: 24px 24px;
   background-image: 
-    linear-gradient(to right, rgba(248, 250, 252, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(248, 250, 252, 0.035) 1px, transparent 1px);
+    linear-gradient(to right, rgba(244, 244, 245, 0.032) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(244, 244, 245, 0.032) 1px, transparent 1px);
 }
 
 @media print {

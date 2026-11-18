@@ -1,75 +1,97 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { jsPDF } from 'jspdf';
 import {
   amountToWords,
   calculateInvoiceSummary,
   calculateLineItem,
+  calculateLogoSquarePlacement,
+  createCatalogItemFromInclusivePrice,
   filterAndSortInvoices,
+  formatBuyerDisplayName,
   formatCurrency,
   formatPackagePlural,
+  formatPaymentMethodSummary,
   formatTaxModeLabel,
   generateNextInvoiceNumber,
+  getCatalogItemInclusivePrice,
+  normalizeInvoiceRecord,
   updateItemFromInclusiveRate,
   updateItemFromLineTotalInclusive,
   updateItemFromTaxableValue,
   updateItemTaxRates,
   validateAndParseBackupJson,
 } from './billing';
-import { Invoice, InvoiceLineItem } from '../types/billing';
+import { PDF_FONT_FAMILY, registerIbmPlexSerif } from './ibmPlexSerifFont';
+import { Invoice, InvoiceLineItem, PACKAGING_OPTIONS } from '../types/billing';
 
 const sampleLine: InvoiceLineItem = {
   id: 'line-1',
   name: 'Industrial Sensor Array',
   skuOrHsn: '85423100',
-  packagingType: 'Box',
-  unitsPerPackage: 10,
-  packageCount: 5,
+  packagingType: 'Bucket',
+  unitsPerPackage: 1,
+  packageCount: 50,
   quantity: 50,
   priceEntryMode: 'EXCLUSIVE',
-  unitPrice: 200, // 50 * 200 = 10,000 merchandise
+  unitPrice: 200, // 50 * 200 = 10,000 gross merchandise
   unitPriceInclusive: 236,
-  packagingCostPerPkg: 40, // 5 * 40 = 200 packaging -> 10,200 gross
-  discountPercent: 10, // 10% of 10,200 = 1,020 -> 9,180 taxable
-  taxPercent: 18, // 9% CGST + 9% SGST = 1,652.40 (826.20 + 826.20)
+  discountAmount: 1180, // ₹1,180 discount on final value -> reduces pre-tax taxable to 9,000 and GST to 1,620 so final is 10,620
+  taxPercent: 18, // 9% CGST + 9% SGST
   cgstPercent: 9,
   sgstPercent: 9,
   igstPercent: 18,
 };
 
-test('calculateLineItem computes merchandise, packaging, discount, and CGST + SGST split accurately', () => {
-  const result = calculateLineItem(sampleLine, 'CGST_SGST');
-  assert.equal(result.grossMerchandiseAmount, 10000);
-  assert.equal(result.packagingAmount, 200);
-  assert.equal(result.grossBeforeDiscount, 10200);
-  assert.equal(result.discountAmount, 1020);
-  assert.equal(result.taxableAmount, 9180);
-  assert.equal(result.cgstAmount, 826.2);
-  assert.equal(result.sgstAmount, 826.2);
-  assert.equal(result.igstAmount, 0);
-  assert.equal(result.taxAmount, 1652.4);
-  assert.equal(result.totalLineAmount, 10832.4);
+test('calculateLineItem calculates discount on final value (adjusting pre-tax taxable and GST so final amount changes as required) or directly on pre-tax base', () => {
+  // Mode 1: calculateDiscountOnFinalValue = true (default)
+  const finalMode = calculateLineItem(sampleLine, 'CGST_SGST', true);
+  assert.equal(finalMode.grossMerchandiseAmount, 10000);
+  assert.equal(finalMode.grossLineTotal, 11800);
+  assert.equal(finalMode.discountAmount, 1180);
+  assert.equal(finalMode.preTaxDiscountAmount, 1000);
+  assert.equal(finalMode.taxableAmount, 9000);
+  assert.equal(finalMode.cgstAmount, 810);
+  assert.equal(finalMode.sgstAmount, 810);
+  assert.equal(finalMode.igstAmount, 0);
+  assert.equal(finalMode.taxAmount, 1620);
+  assert.equal(finalMode.totalLineAmount, 10620); // 11800 - 1180 exact final reduction, and 9000 + 1620 = 10620
+
+  // Mode 2: calculateDiscountOnFinalValue = false (direct pre-tax deduction)
+  const baseMode = calculateLineItem({ ...sampleLine, discountAmount: 1000 }, 'CGST_SGST', false);
+  assert.equal(baseMode.grossMerchandiseAmount, 10000);
+  assert.equal(baseMode.preTaxDiscountAmount, 1000);
+  assert.equal(baseMode.taxableAmount, 9000);
+  assert.equal(baseMode.cgstAmount, 810);
+  assert.equal(baseMode.sgstAmount, 810);
+  assert.equal(baseMode.taxAmount, 1620);
+  assert.equal(baseMode.totalLineAmount, 10620);
 });
 
-test('calculateLineItem computes IGST when taxMode is IGST and zero when EXEMPT', () => {
-  const igstRes = calculateLineItem(sampleLine, 'IGST');
+test('calculateLineItem computes IGST when taxMode is IGST and zero tax when EXEMPT', () => {
+  const igstRes = calculateLineItem(sampleLine, 'IGST', true);
   assert.equal(igstRes.cgstAmount, 0);
   assert.equal(igstRes.sgstAmount, 0);
-  assert.equal(igstRes.igstAmount, 1652.4);
-  assert.equal(igstRes.totalLineAmount, 10832.4);
+  assert.equal(igstRes.taxableAmount, 9000);
+  assert.equal(igstRes.igstAmount, 1620);
+  assert.equal(igstRes.discountAmount, 1180);
+  assert.equal(igstRes.totalLineAmount, 10620);
 
-  const exemptRes = calculateLineItem(sampleLine, 'EXEMPT');
+  const exemptRes = calculateLineItem({ ...sampleLine, discountAmount: 800 }, 'EXEMPT', true);
   assert.equal(exemptRes.taxAmount, 0);
-  assert.equal(exemptRes.totalLineAmount, 9180);
+  assert.equal(exemptRes.grossLineTotal, 10000);
+  assert.equal(exemptRes.discountAmount, 800);
+  assert.equal(exemptRes.taxableAmount, 9200);
+  assert.equal(exemptRes.totalLineAmount, 9200);
 });
 
 test('dynamic value entry: entering tax-inclusive unit rate back-calculates taxable value and GST accurately', () => {
   const baseItem: InvoiceLineItem = {
     ...sampleLine,
-    packageCount: 1,
-    unitsPerPackage: 10,
+    packageCount: 10,
+    unitsPerPackage: 1,
     quantity: 10,
-    packagingCostPerPkg: 0,
-    discountPercent: 0,
+    discountAmount: 0,
     cgstPercent: 9,
     sgstPercent: 9,
     igstPercent: 18,
@@ -88,34 +110,35 @@ test('dynamic value entry: entering tax-inclusive unit rate back-calculates taxa
   assert.equal(calc.totalLineAmount, 11800);
 });
 
-test('dynamic value entry: entering taxable value or line total inclusive back-calculates unit prices and GST', () => {
+test('dynamic value entry: entering taxable value or line total inclusive back-calculates unit prices with pre-tax / final-value discount', () => {
   const baseItem: InvoiceLineItem = {
     ...sampleLine,
-    packageCount: 1,
-    unitsPerPackage: 5,
+    packageCount: 5,
+    unitsPerPackage: 1,
     quantity: 5,
-    packagingCostPerPkg: 0,
-    discountPercent: 0,
+    discountAmount: 590, // ₹590 discount on final value (which is ₹500 pre-tax at 18% GST)
     cgstPercent: 9,
     sgstPercent: 9,
     igstPercent: 18,
     taxPercent: 18,
   };
 
-  // User directly types ₹5,000 as the Taxable Value for 5 units
-  const fromTaxable = updateItemFromTaxableValue(baseItem, 5000, 'CGST_SGST');
+  // User directly types ₹4,500 as the Taxable Value for 5 units (with ₹590 final discount -> ₹500 pre-tax discount -> ₹5,000 gross merchandise)
+  const fromTaxable = updateItemFromTaxableValue(baseItem, 4500, 'CGST_SGST', true);
   assert.equal(fromTaxable.unitPrice, 1000);
   assert.equal(fromTaxable.unitPriceInclusive, 1180);
-  const calc1 = calculateLineItem(fromTaxable, 'CGST_SGST');
-  assert.equal(calc1.taxableAmount, 5000);
-  assert.equal(calc1.totalLineAmount, 5900);
+  const calc1 = calculateLineItem(fromTaxable, 'CGST_SGST', true);
+  assert.equal(calc1.taxableAmount, 4500);
+  assert.equal(calc1.grossLineTotal, 5900);
+  assert.equal(calc1.totalLineAmount, 5310); // 5900 - 590 discount = 5310 (4500 taxable + 810 GST)
 
-  // User directly types ₹11,800 as the Line Total (Incl. 18% GST) for 5 units
-  const fromTotal = updateItemFromLineTotalInclusive(baseItem, 11800, 'IGST');
-  const calc2 = calculateLineItem(fromTotal, 'IGST');
-  assert.equal(calc2.taxableAmount, 10000);
-  assert.equal(calc2.igstAmount, 1800);
-  assert.equal(calc2.totalLineAmount, 11800);
+  // User directly types ₹11,210 as the Line Total (after ₹590 final discount -> ₹11,800 gross incl 18% GST)
+  const fromTotal = updateItemFromLineTotalInclusive(baseItem, 11210, 'IGST', true);
+  const calc2 = calculateLineItem(fromTotal, 'IGST', true);
+  assert.equal(calc2.taxableAmount, 9500);
+  assert.equal(calc2.igstAmount, 1710);
+  assert.equal(calc2.discountAmount, 590);
+  assert.equal(calc2.totalLineAmount, 11210);
   assert.equal(fromTotal.unitPrice, 2000);
 });
 
@@ -124,8 +147,7 @@ test('updateItemTaxRates updates CGST, SGST, and IGST and preserves inclusive an
     {
       ...sampleLine,
       quantity: 1,
-      packagingCostPerPkg: 0,
-      discountPercent: 0,
+      discountAmount: 0,
     },
     1180,
     'CGST_SGST'
@@ -140,6 +162,48 @@ test('updateItemTaxRates updates CGST, SGST, and IGST and preserves inclusive an
   assert.equal(with12.unitPrice, 1000);
 });
 
+test('calculateLogoSquarePlacement expands non-square logos to square preserving aspect ratio and downscales to 512px', () => {
+  // Wide 1024x512 logo (2:1 aspect ratio)
+  const wide = calculateLogoSquarePlacement(1024, 512, 512);
+  assert.equal(wide.canvasSize, 512);
+  assert.equal(wide.sourceSquareSize, 1024);
+  assert.equal(wide.sourceOffsetX, 0);
+  assert.equal(wide.sourceOffsetY, 256);
+  assert.equal(wide.drawWidth, 512);
+  assert.equal(wide.drawHeight, 256);
+  assert.equal(wide.offsetX, 0);
+  assert.equal(wide.offsetY, 128);
+
+  // Tall 300x600 logo (1:2 aspect ratio)
+  const tall = calculateLogoSquarePlacement(300, 600, 512);
+  assert.equal(tall.canvasSize, 512);
+  assert.equal(tall.sourceSquareSize, 600);
+  assert.equal(tall.sourceOffsetX, 150);
+  assert.equal(tall.sourceOffsetY, 0);
+  assert.equal(tall.drawWidth, 256);
+  assert.equal(tall.drawHeight, 512);
+  assert.equal(tall.offsetX, 128);
+  assert.equal(tall.offsetY, 0);
+});
+
+test('PACKAGING_OPTIONS includes Bucket, Tin, Bottle and other industrial packaging items, and IBM Plex Serif registers in jsPDF', () => {
+  assert.ok(PACKAGING_OPTIONS.includes('Bucket'));
+  assert.ok(PACKAGING_OPTIONS.includes('Tin'));
+  assert.ok(PACKAGING_OPTIONS.includes('Bottle'));
+  assert.ok(PACKAGING_OPTIONS.includes('Drum'));
+  assert.ok(PACKAGING_OPTIONS.includes('Jar'));
+  assert.ok(PACKAGING_OPTIONS.includes('Can'));
+
+  assert.equal(formatPackagePlural('Bucket', 3), 'Buckets');
+  assert.equal(formatPackagePlural('Tin', 2), 'Tins');
+  assert.equal(formatPackagePlural('Bottle', 5), 'Bottles');
+  assert.equal(formatPackagePlural('Pouch', 4), 'Pouches');
+
+  const doc = new jsPDF();
+  registerIbmPlexSerif(doc);
+  assert.equal(doc.getFont().fontName, PDF_FONT_FAMILY);
+});
+
 const makeSampleInvoice = (overrides: Partial<Invoice> = {}): Invoice => ({
   id: 'inv-1',
   invoiceNumber: 'INV-2026-0101',
@@ -150,6 +214,11 @@ const makeSampleInvoice = (overrides: Partial<Invoice> = {}): Invoice => ({
   taxMode: 'CGST_SGST',
   placeOfSupply: '27 - Maharashtra',
   purchaseOrderNumber: 'PO-9901',
+  isCashCustomer: false,
+  paymentMethod: '',
+  paymentMethodOther: '',
+  paymentMethodDetails: '',
+  calculateDiscountOnFinalValue: true,
   seller: {
     name: 'Rajesh Sharma',
     companyName: 'Bharat Precision Components Pvt. Ltd.',
@@ -177,17 +246,18 @@ const makeSampleInvoice = (overrides: Partial<Invoice> = {}): Invoice => ({
     routingOrIfsc: 'HDFC0000240',
   },
   items: [sampleLine],
-  shippingAndHandling: 250,
-  additionalDiscountAmount: 180,
+  shippingAndHandling: 0,
+  additionalDiscountAmount: 1180,
   roundOff: true,
   notes: 'Handle with care.',
-  termsAndConditions: 'Net 15 days.',
+  termsAndConditions: '',
   pdfOptions: {
     paperSize: 'a4',
     orientation: 'portrait',
     marginPreset: 'standard',
     accentColor: 'slate',
     headerTitle: 'TAX INVOICE',
+    showSellerLogo: true,
     showSkuColumn: true,
     showPackagingColumn: true,
     showDiscountColumn: true,
@@ -203,18 +273,75 @@ const makeSampleInvoice = (overrides: Partial<Invoice> = {}): Invoice => ({
   ...overrides,
 });
 
-test('calculateInvoiceSummary aggregates totals, shipping, extra discount, and roundOff in INR', () => {
+test('calculateInvoiceSummary always calculates both line and additional discounts on final value and exposes taxable discount amounts', () => {
+  // sampleLine has grossMerchandise = 10,000, line discount = 1,180 (on final value -> 1,000 taxable discount, 9,000 taxable, 1,620 GST, 10,620 line total)
+  // additionalDiscountAmount = 1,180 (on final value -> 1,000 taxable discount, reduces taxable to 8,000, GST to 1,440, so final is 9,440)
   const inv = makeSampleInvoice();
   const summary = calculateInvoiceSummary(inv);
-  assert.equal(summary.totalPackages, 5);
   assert.equal(summary.totalUnits, 50);
   assert.equal(summary.merchandiseSubtotal, 10000);
-  assert.equal(summary.packagingSubtotal, 200);
-  assert.equal(summary.taxableSubtotal, 9000); // 9180 - 180 additional discount
-  assert.equal(summary.totalTax, 1652.4);
-  assert.equal(summary.rawGrandTotal, 10902.4); // 9000 + 1652.4 + 250 shipping
-  assert.equal(summary.grandTotal, 10902); // rounded
-  assert.equal(summary.roundOffAdjustment, -0.4);
+  assert.equal(summary.itemDiscountTotal, 1180);
+  assert.equal(summary.itemPreTaxDiscountTotal, 1000);
+  assert.equal(summary.additionalDiscountAmount, 1180);
+  assert.equal(summary.additionalPreTaxDiscountAmount, 1000);
+  assert.equal(summary.taxableSubtotal, 8000); // 10,000 - 1,000 - 1,000
+  assert.equal(summary.cgstTotal, 720);
+  assert.equal(summary.sgstTotal, 720);
+  assert.equal(summary.totalTax, 1440);
+  assert.equal(summary.shippingAndHandling, 0);
+  assert.equal(summary.rawGrandTotal, 9440); // 11,800 - 1,180 - 1,180 = 9,440 (and 8,000 + 1,440 = 9,440)
+  assert.equal(summary.grandTotal, 9440);
+});
+
+test('Cash Customer option, Payment Method formatting, and Paid dueDate clearing work accurately', () => {
+  const cashInv = normalizeInvoiceRecord(
+    makeSampleInvoice({
+      status: 'Paid',
+      dueDate: '2026-12-01',
+      isCashCustomer: true,
+      paymentMethod: 'Other',
+      paymentMethodOther: 'NEFT Escrow',
+      paymentMethodDetails: 'Ref #99102',
+    })
+  );
+
+  // Paid status clears dueDate
+  assert.equal(cashInv.dueDate, '');
+  // Cash Customer overrides buyer display name
+  assert.equal(formatBuyerDisplayName(cashInv), 'Cash Customer');
+  // Payment method summary formats custom Other method + details
+  assert.equal(
+    formatPaymentMethodSummary(cashInv),
+    'NEFT Escrow (Ref #99102)'
+  );
+});
+
+test('createCatalogItemFromInclusivePrice and getCatalogItemInclusivePrice store tax-inclusive unit price and tax rate', () => {
+  const item18 = createCatalogItemFromInclusivePrice({
+    id: 'cat-test-18',
+    name: 'Dielectric Coolant Bucket',
+    skuOrHsn: '27101980',
+    packagingType: 'Bucket',
+    unitPriceInclusive: 1180,
+    taxPercent: 18,
+  });
+  assert.equal(item18.unitPriceInclusive, 1180);
+  assert.equal(item18.taxPercent, 18);
+  assert.equal(item18.unitPrice, 1000);
+  assert.equal(getCatalogItemInclusivePrice(item18), 1180);
+
+  const item12 = createCatalogItemFromInclusivePrice({
+    id: 'cat-test-12',
+    name: 'Calibration Bottle',
+    skuOrHsn: '38140010',
+    packagingType: 'Bottle',
+    unitPriceInclusive: 560,
+    taxPercent: 12,
+  });
+  assert.equal(item12.unitPriceInclusive, 560);
+  assert.equal(item12.taxPercent, 12);
+  assert.equal(item12.unitPrice, 500);
+  assert.equal(getCatalogItemInclusivePrice(item12), 560);
 });
 
 test('amountToWords and formatCurrency use Indian Rupee Lakh/Crore numbering', () => {

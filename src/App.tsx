@@ -19,6 +19,7 @@ import {
   DEFAULT_BANK,
   DEFAULT_PDF_OPTIONS,
   DEFAULT_SELLER,
+  DEFAULT_TERMS_AND_CONDITIONS,
   INITIAL_CATALOG,
   INITIAL_INVOICES,
 } from './data/seedData';
@@ -32,10 +33,11 @@ import { PdfPreviewModal } from './components/PdfPreviewModal';
 import { DataSettingsModal } from './components/DataSettingsModal';
 
 const STORAGE_KEYS = {
-  INVOICES: 'billuminati_invoices_inr_v2',
+  INVOICES: 'billuminati_invoices_inr_v3',
   SELLER: 'billuminati_default_seller_inr_v2',
   BANK: 'billuminati_default_bank_inr_v2',
   PDF_OPTS: 'billuminati_default_pdf_inr_v2',
+  TERMS: 'billuminati_default_terms_inr_v1',
   CATALOG: 'billuminati_catalog_inr_v2',
   THEME: 'billuminati_theme_v1',
 };
@@ -69,9 +71,15 @@ export default function App() {
     loadFromStorage(STORAGE_KEYS.BANK, DEFAULT_BANK)
   );
 
-  const [defaultPdfOptions] = useState<PdfPageOptions>(() =>
-    loadFromStorage(STORAGE_KEYS.PDF_OPTS, DEFAULT_PDF_OPTIONS)
-  );
+  const [defaultTermsAndConditions, setDefaultTermsAndConditions] =
+    useState<string>(() =>
+      loadFromStorage(STORAGE_KEYS.TERMS, DEFAULT_TERMS_AND_CONDITIONS)
+    );
+
+  const [defaultPdfOptions] = useState<PdfPageOptions>(() => ({
+    ...DEFAULT_PDF_OPTIONS,
+    ...loadFromStorage(STORAGE_KEYS.PDF_OPTS, DEFAULT_PDF_OPTIONS),
+  }));
 
   const [catalog, setCatalog] = useState<CatalogItem[]>(() =>
     loadFromStorage(STORAGE_KEYS.CATALOG, INITIAL_CATALOG)
@@ -119,16 +127,20 @@ export default function App() {
     }
   }, [invoices]);
 
-  // Persist seller, bank, catalog
+  // Persist seller, bank, default terms, catalog
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.SELLER, JSON.stringify(defaultSeller));
       localStorage.setItem(STORAGE_KEYS.BANK, JSON.stringify(defaultBank));
+      localStorage.setItem(
+        STORAGE_KEYS.TERMS,
+        JSON.stringify(defaultTermsAndConditions)
+      );
       localStorage.setItem(STORAGE_KEYS.CATALOG, JSON.stringify(catalog));
     } catch {
       // ignore storage errors
     }
-  }, [defaultSeller, defaultBank, catalog]);
+  }, [defaultSeller, defaultBank, defaultTermsAndConditions, catalog]);
 
   const createBlankInvoice = (): Invoice => {
     const today = new Date().toISOString().slice(0, 10);
@@ -144,6 +156,11 @@ export default function App() {
       taxMode: 'CGST_SGST',
       placeOfSupply: '27 - Maharashtra',
       purchaseOrderNumber: '',
+      isCashCustomer: false,
+      paymentMethod: '',
+      paymentMethodOther: '',
+      paymentMethodDetails: '',
+      calculateDiscountOnFinalValue: true,
       seller: { ...defaultSeller },
       buyer: {
         name: '',
@@ -163,12 +180,13 @@ export default function App() {
           description: '',
           skuOrHsn: '',
           packagingType: 'Box',
-          unitsPerPackage: 10,
-          packageCount: 1,
+          unitsPerPackage: 1,
+          packageCount: 10,
           quantity: 10,
           priceEntryMode: 'EXCLUSIVE',
           unitPrice: 0,
           unitPriceInclusive: 0,
+          discountAmount: 0,
           packagingCostPerPkg: 0,
           discountPercent: 0,
           taxPercent: 18,
@@ -181,9 +199,8 @@ export default function App() {
       additionalDiscountAmount: 0,
       roundOff: true,
       notes: '',
-      termsAndConditions:
-        'Payment due within 15 days of issue. Please quote invoice number on remittance.',
-      pdfOptions: { ...defaultPdfOptions },
+      termsAndConditions: defaultTermsAndConditions,
+      pdfOptions: { ...defaultPdfOptions, showSellerLogo: true },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -203,24 +220,33 @@ export default function App() {
   };
 
   const handleSaveInvoice = (saved: Invoice) => {
+    const normalized = normalizeInvoiceRecord(saved);
     setInvoices((prev) => {
-      const exists = prev.some((i) => i.id === saved.id);
+      const exists = prev.some((i) => i.id === normalized.id);
       if (exists) {
-        return prev.map((i) => (i.id === saved.id ? saved : i));
+        return prev.map((i) => (i.id === normalized.id ? normalized : i));
       }
-      return [saved, ...prev];
+      return [normalized, ...prev];
     });
-    setEditingInvoice(saved);
+    if (normalized.seller.logoDataUrl !== undefined) {
+      setDefaultSeller((prev) => ({
+        ...prev,
+        logoDataUrl: normalized.seller.logoDataUrl,
+      }));
+    }
+    setEditingInvoice(normalized);
     setIsCreatingNew(false);
   };
 
   const handleDuplicateInvoice = (source: Invoice) => {
     const today = new Date().toISOString().slice(0, 10);
+    const due = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
     const cloned: Invoice = {
       ...JSON.parse(JSON.stringify(source)),
       id: `inv-${Date.now()}`,
       invoiceNumber: generateNextInvoiceNumber(invoices),
       issueDate: today,
+      dueDate: due,
       status: 'Draft',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -236,7 +262,18 @@ export default function App() {
     setInvoices((prev) =>
       prev.map((inv) =>
         inv.id === invoiceId
-          ? { ...inv, status, updatedAt: new Date().toISOString() }
+          ? {
+              ...inv,
+              status,
+              dueDate:
+                status === 'Paid'
+                  ? ''
+                  : inv.dueDate ||
+                    new Date(Date.now() + 15 * 86400000)
+                      .toISOString()
+                      .slice(0, 10),
+              updatedAt: new Date().toISOString(),
+            }
           : inv
       )
     );
@@ -263,6 +300,43 @@ export default function App() {
         pdfOptions: updatedOptions,
       });
     }
+    if (pdfPreviewInvoice && pdfPreviewInvoice.id === invoiceId) {
+      setPdfPreviewInvoice({
+        ...pdfPreviewInvoice,
+        pdfOptions: updatedOptions,
+      });
+    }
+  };
+
+  const handleUpdateSellerLogo = (invoiceId: string, logoDataUrl: string) => {
+    setDefaultSeller((prev) => ({ ...prev, logoDataUrl }));
+    setInvoices((prev) =>
+      prev.map((inv) =>
+        inv.id === invoiceId || !inv.seller.logoDataUrl
+          ? {
+              ...inv,
+              seller: { ...inv.seller, logoDataUrl },
+              updatedAt: new Date().toISOString(),
+            }
+          : inv
+      )
+    );
+    if (editingInvoice) {
+      setEditingInvoice((prev) =>
+        prev
+          ? {
+              ...prev,
+              seller: { ...prev.seller, logoDataUrl },
+            }
+          : null
+      );
+    }
+    if (pdfPreviewInvoice && pdfPreviewInvoice.id === invoiceId) {
+      setPdfPreviewInvoice({
+        ...pdfPreviewInvoice,
+        seller: { ...pdfPreviewInvoice.seller, logoDataUrl },
+      });
+    }
   };
 
   const handleImportBackup = (
@@ -283,21 +357,24 @@ export default function App() {
     }
     if (backup.defaultSeller) setDefaultSeller(backup.defaultSeller);
     if (backup.defaultBank) setDefaultBank(backup.defaultBank);
+    if (typeof backup.defaultTermsAndConditions === 'string') {
+      setDefaultTermsAndConditions(backup.defaultTermsAndConditions);
+    }
     if (Array.isArray(backup.catalog)) setCatalog(backup.catalog);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 bg-square-ruled flex flex-col">
+    <div className="min-h-screen bg-[#fafafa] dark:bg-[#111113] text-zinc-900 dark:text-zinc-100 bg-square-ruled flex flex-col">
       {/* Strict 3-Zone Top Bar Contract */}
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-8 px-6 py-3.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800">
-        {/* Zone 1: Brand Title, single text element */}
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-8 px-6 py-3.5 bg-white/95 dark:bg-[#18181b]/95 backdrop-blur-xs border-b border-zinc-200 dark:border-[#2a2a2e]">
+        {/* Zone 1: Brand Title, single text element in original Plus Jakarta Sans without dot */}
         <a
           href="#dashboard"
           onClick={(e) => {
             e.preventDefault();
             setActiveView('dashboard');
           }}
-          className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap shrink-0"
+          className="font-brand inline-flex items-baseline text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-100 whitespace-nowrap shrink-0"
         >
           Billuminati
         </a>
@@ -305,7 +382,7 @@ export default function App() {
         {/* Zone 2: 4–5 concise single-line navigation links */}
         <nav
           aria-label="Primary Navigation"
-          className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-600 dark:text-slate-300"
+          className="hidden md:flex items-center gap-6 text-xs font-medium text-zinc-600 dark:text-zinc-300"
         >
           <a
             href="#dashboard"
@@ -313,9 +390,9 @@ export default function App() {
               e.preventDefault();
               setActiveView('dashboard');
             }}
-            className={`hover:text-slate-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 ${
+            className={`hover:text-zinc-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 ${
               activeView === 'dashboard'
-                ? 'text-slate-900 dark:text-white font-semibold underline'
+                ? 'text-zinc-900 dark:text-white font-semibold underline'
                 : ''
             }`}
           >
@@ -328,9 +405,9 @@ export default function App() {
               e.preventDefault();
               handleStartNewInvoice();
             }}
-            className={`hover:text-slate-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 ${
+            className={`hover:text-zinc-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 ${
               activeView === 'editor'
-                ? 'text-slate-900 dark:text-white font-semibold underline'
+                ? 'text-zinc-900 dark:text-white font-semibold underline'
                 : ''
             }`}
           >
@@ -343,7 +420,7 @@ export default function App() {
               e.preventDefault();
               setDataModalTab('catalog');
             }}
-            className="hover:text-slate-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+            className="hover:text-zinc-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
           >
             Item Catalog
           </a>
@@ -354,7 +431,7 @@ export default function App() {
               e.preventDefault();
               setDataModalTab('seller');
             }}
-            className="hover:text-slate-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+            className="hover:text-zinc-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
           >
             Seller Profile
           </a>
@@ -365,7 +442,7 @@ export default function App() {
               e.preventDefault();
               setDataModalTab('backup');
             }}
-            className="hover:text-slate-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+            className="hover:text-zinc-900 dark:hover:text-white hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
           >
             JSON Data
           </a>
@@ -379,7 +456,7 @@ export default function App() {
             aria-label={
               theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'
             }
-            className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+            className="p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-[#26262a] rounded-lg transition-colors cursor-pointer"
           >
             {theme === 'light' ? (
               <Moon className="w-4 h-4" />
@@ -391,7 +468,7 @@ export default function App() {
           <button
             type="button"
             onClick={handleStartNewInvoice}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-white rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             New Bill
@@ -429,14 +506,14 @@ export default function App() {
       </main>
 
       {/* Quiet Footer */}
-      <footer className="border-t border-slate-200/80 dark:border-slate-800/80 bg-white/60 dark:bg-slate-900/60 px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+      <footer className="border-t border-zinc-200/80 dark:border-[#2a2a2e] bg-white/60 dark:bg-[#18181b]/70 px-6 py-4 text-xs text-zinc-500 dark:text-zinc-400">
         <div className="max-w-[1280px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>Billuminati — Tax Invoice & Packaging Ledger</span>
           <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={() => setDataModalTab('backup')}
-              className="hover:text-slate-900 dark:hover:text-slate-200 underline-offset-4 hover:underline cursor-pointer"
+              className="hover:text-zinc-900 dark:hover:text-zinc-200 underline-offset-4 hover:underline cursor-pointer"
             >
               Export / Import JSON
             </button>
@@ -444,7 +521,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setDataModalTab('seller')}
-              className="hover:text-slate-900 dark:hover:text-slate-200 underline-offset-4 hover:underline cursor-pointer"
+              className="hover:text-zinc-900 dark:hover:text-zinc-200 underline-offset-4 hover:underline cursor-pointer"
             >
               Default Seller Settings
             </button>
@@ -458,6 +535,7 @@ export default function App() {
           invoice={pdfPreviewInvoice}
           onClose={() => setPdfPreviewInvoice(null)}
           onUpdateInvoiceOptions={handleUpdateInvoicePdfOptions}
+          onUpdateSellerLogo={handleUpdateSellerLogo}
         />
       )}
 
@@ -468,13 +546,34 @@ export default function App() {
           defaultSeller={defaultSeller}
           defaultBank={defaultBank}
           defaultPdfOptions={defaultPdfOptions}
+          defaultTermsAndConditions={defaultTermsAndConditions}
           catalog={catalog}
           initialTab={dataModalTab}
           onClose={() => setDataModalTab(null)}
           onImportBackup={handleImportBackup}
-          onUpdateDefaults={(seller, bank) => {
+          onUpdateDefaults={(seller, bank, defaultTerms) => {
             setDefaultSeller(seller);
             setDefaultBank(bank);
+            setDefaultTermsAndConditions(defaultTerms);
+            setInvoices((prev) =>
+              prev.map((inv) => ({
+                ...inv,
+                seller: {
+                  ...inv.seller,
+                  logoDataUrl: seller.logoDataUrl,
+                },
+              }))
+            );
+            if (editingInvoice) {
+              setEditingInvoice((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      seller: { ...prev.seller, logoDataUrl: seller.logoDataUrl },
+                    }
+                  : null
+              );
+            }
           }}
           onUpdateCatalog={setCatalog}
         />

@@ -1,14 +1,57 @@
 export type PackagingType =
   | 'Unit'
+  | 'Piece'
   | 'Box'
   | 'Carton'
-  | 'Pallet'
-  | 'Crate'
-  | 'Bundle'
-  | 'Pack'
+  | 'Bucket'
+  | 'Tin'
+  | 'Bottle'
+  | 'Jar'
+  | 'Can'
+  | 'Drum'
+  | 'Barrel'
   | 'Bag'
+  | 'Sack'
+  | 'Pouch'
+  | 'Pack'
+  | 'Bundle'
   | 'Roll'
-  | 'Piece';
+  | 'Tube'
+  | 'Crate'
+  | 'Pallet'
+  | 'Cylinder'
+  | 'Container'
+  | 'Set'
+  | 'Pair'
+  | 'Dozen';
+
+export const PACKAGING_OPTIONS: PackagingType[] = [
+  'Unit',
+  'Piece',
+  'Box',
+  'Carton',
+  'Bucket',
+  'Tin',
+  'Bottle',
+  'Jar',
+  'Can',
+  'Drum',
+  'Barrel',
+  'Bag',
+  'Sack',
+  'Pouch',
+  'Pack',
+  'Bundle',
+  'Roll',
+  'Tube',
+  'Crate',
+  'Pallet',
+  'Cylinder',
+  'Container',
+  'Set',
+  'Pair',
+  'Dozen',
+];
 
 export type TaxMode = 'CGST_SGST' | 'IGST' | 'EXEMPT';
 
@@ -16,20 +59,41 @@ export type PriceEntryMode = 'EXCLUSIVE' | 'INCLUSIVE';
 
 export type InvoiceStatus = 'Paid' | 'Pending' | 'Overdue' | 'Draft';
 
+export type PaymentMethodType =
+  | ''
+  | 'Direct Bank Transfer'
+  | 'UPI'
+  | 'Cash'
+  | 'Cheque'
+  | 'Other';
+
+export const PAYMENT_METHOD_OPTIONS: Array<{
+  value: PaymentMethodType;
+  label: string;
+}> = [
+  { value: '', label: 'Not Specified (Optional)' },
+  { value: 'Direct Bank Transfer', label: 'Direct Bank Transfer (NEFT / RTGS / IMPS)' },
+  { value: 'UPI', label: 'UPI' },
+  { value: 'Cash', label: 'Cash' },
+  { value: 'Cheque', label: 'Cheque' },
+  { value: 'Other', label: 'Others (Specify)' },
+];
+
 export interface InvoiceLineItem {
   id: string;
   name: string;
   description?: string;
   skuOrHsn: string;
   packagingType: PackagingType;
-  unitsPerPackage: number; // e.g. 12 units per Box
-  packageCount: number; // number of packages
+  unitsPerPackage: number;
+  packageCount: number;
   quantity: number; // total billable quantity
   priceEntryMode?: PriceEntryMode; // whether user last anchored Excl. or Incl. rate
   unitPrice: number; // Unit price exclusive of GST (₹)
   unitPriceInclusive?: number; // Unit price inclusive of GST (₹)
-  packagingCostPerPkg: number; // optional packaging charge per package (₹)
-  discountPercent: number;
+  discountAmount?: number; // Line item discount in rupees (₹)
+  packagingCostPerPkg?: number; // legacy field (unused)
+  discountPercent?: number; // legacy field (unused)
   taxPercent: number; // Total GST % (CGST % + SGST % or IGST %)
   cgstPercent: number; // Explicit CGST %
   sgstPercent: number; // Explicit SGST %
@@ -45,6 +109,7 @@ export interface PartyDetails {
   addressLine1: string;
   cityStatePostal: string;
   country: string;
+  logoDataUrl?: string; // Square 512x512 PNG data URL for Seller Logo
 }
 
 export interface BankDetails {
@@ -62,6 +127,7 @@ export interface PdfPageOptions {
   marginPreset: 'compact' | 'standard' | 'wide';
   accentColor: 'slate' | 'indigo' | 'emerald' | 'amber' | 'crimson';
   headerTitle: string; // e.g. "TAX INVOICE", "PROFORMA INVOICE"
+  showSellerLogo?: boolean;
   showSkuColumn: boolean;
   showPackagingColumn: boolean;
   showDiscountColumn: boolean;
@@ -77,12 +143,17 @@ export interface Invoice {
   id: string;
   invoiceNumber: string;
   issueDate: string; // YYYY-MM-DD
-  dueDate: string; // YYYY-MM-DD
+  dueDate: string; // YYYY-MM-DD (empty string when status is 'Paid')
   status: InvoiceStatus;
   currency: 'INR';
   taxMode: TaxMode;
   placeOfSupply: string;
   purchaseOrderNumber: string;
+  isCashCustomer?: boolean;
+  paymentMethod?: PaymentMethodType;
+  paymentMethodOther?: string;
+  paymentMethodDetails?: string;
+  calculateDiscountOnFinalValue?: boolean;
   seller: PartyDetails;
   buyer: PartyDetails;
   bankDetails: BankDetails;
@@ -104,7 +175,8 @@ export interface CatalogItem {
   packagingType: PackagingType;
   unitsPerPackage: number;
   unitPrice: number;
-  packagingCostPerPkg: number;
+  unitPriceInclusive?: number;
+  packagingCostPerPkg?: number;
   taxPercent: number;
 }
 
@@ -116,6 +188,7 @@ export interface BilluminatiBackup {
   defaultSeller: PartyDetails;
   defaultBank: BankDetails;
   defaultPdfOptions: PdfPageOptions;
+  defaultTermsAndConditions?: string;
   catalog: CatalogItem[];
 }
 

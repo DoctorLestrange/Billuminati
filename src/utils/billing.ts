@@ -1,8 +1,10 @@
 import {
   BilluminatiBackup,
+  CatalogItem,
   DashboardFilters,
   Invoice,
   InvoiceLineItem,
+  PackagingType,
   TaxMode,
 } from '../types/billing';
 
@@ -12,7 +14,8 @@ export interface LineCalculation {
   grossMerchandiseAmount: number;
   packagingAmount: number;
   grossBeforeDiscount: number;
-  discountAmount: number;
+  discountAmount: number; // User-entered discount (₹)
+  preTaxDiscountAmount: number; // Pre-tax reduction deducted from grossMerchandiseAmount to get taxableAmount
   taxableAmount: number;
   effectiveCgstPercent: number;
   effectiveSgstPercent: number;
@@ -22,6 +25,7 @@ export interface LineCalculation {
   sgstAmount: number;
   igstAmount: number;
   taxAmount: number;
+  grossLineTotal: number;
   totalLineAmount: number;
 }
 
@@ -32,7 +36,10 @@ export interface InvoiceSummaryCalculation {
   merchandiseSubtotal: number;
   packagingSubtotal: number;
   itemDiscountTotal: number;
+  itemPreTaxDiscountTotal: number;
   additionalDiscountAmount: number;
+  additionalPreTaxDiscountAmount: number;
+  calculateDiscountOnFinalValue: boolean;
   taxableSubtotal: number;
   totalTax: number;
   cgstTotal: number;
@@ -55,6 +62,17 @@ export interface InvoiceSummaryCalculation {
   }>;
 }
 
+export interface SquareLogoPlacement {
+  canvasSize: number;
+  sourceSquareSize: number;
+  sourceOffsetX: number;
+  sourceOffsetY: number;
+  drawWidth: number;
+  drawHeight: number;
+  offsetX: number;
+  offsetY: number;
+}
+
 export function roundCurrency(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -63,6 +81,121 @@ export function roundCurrency(value: number): number {
 export function roundRate(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
+}
+
+/**
+ * Computes the square canvas expansion and 512px downscale geometry for a Seller Logo.
+ * If the logo is not square, expands the canvas to a square (max(width, height))
+ * centered without changing the logo's aspect ratio, and scales to 512px side size.
+ */
+export function calculateLogoSquarePlacement(
+  naturalWidth: number,
+  naturalHeight: number,
+  targetSide = 512
+): SquareLogoPlacement {
+  const safeW = Math.max(1, Math.round(Number(naturalWidth) || 1));
+  const safeH = Math.max(1, Math.round(Number(naturalHeight) || 1));
+  const sourceSquareSize = Math.max(safeW, safeH);
+  const sourceOffsetX = Math.round((sourceSquareSize - safeW) / 2);
+  const sourceOffsetY = Math.round((sourceSquareSize - safeH) / 2);
+
+  const scale = targetSide / sourceSquareSize;
+  const drawWidth = Math.max(1, Math.round(safeW * scale));
+  const drawHeight = Math.max(1, Math.round(safeH * scale));
+  const offsetX = Math.round((targetSide - drawWidth) / 2);
+  const offsetY = Math.round((targetSide - drawHeight) / 2);
+
+  return {
+    canvasSize: targetSide,
+    sourceSquareSize,
+    sourceOffsetX,
+    sourceOffsetY,
+    drawWidth,
+    drawHeight,
+    offsetX,
+    offsetY,
+  };
+}
+
+/**
+ * Browser helper: takes an uploaded image File, expands non-square images onto a square
+ * canvas without altering aspect ratio, downscales to 512x512px, and returns a PNG data URL.
+ */
+export function processSellerLogoFile(
+  file: File,
+  targetSide = 512
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('Please select a valid image file (PNG, JPG, WebP, or SVG).'));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read the selected image file.'));
+    reader.onload = () => {
+      const srcDataUrl = reader.result as string;
+      const img = new Image();
+      img.onerror = () => reject(new Error('Could not decode the uploaded image.'));
+      img.onload = () => {
+        try {
+          const w = Math.max(1, img.naturalWidth || img.width || targetSide);
+          const h = Math.max(1, img.naturalHeight || img.height || targetSide);
+          const placement = calculateLogoSquarePlacement(w, h, targetSide);
+
+          // Step 1: Expand canvas to square (sourceSquareSize x sourceSquareSize) preserving aspect ratio
+          const squareCanvas = document.createElement('canvas');
+          squareCanvas.width = placement.sourceSquareSize;
+          squareCanvas.height = placement.sourceSquareSize;
+          const sqCtx = squareCanvas.getContext('2d');
+          if (!sqCtx) {
+            reject(new Error('Canvas 2D context is not available.'));
+            return;
+          }
+          sqCtx.clearRect(0, 0, placement.sourceSquareSize, placement.sourceSquareSize);
+          sqCtx.imageSmoothingEnabled = true;
+          sqCtx.imageSmoothingQuality = 'high';
+          sqCtx.drawImage(
+            img,
+            placement.sourceOffsetX,
+            placement.sourceOffsetY,
+            w,
+            h
+          );
+
+          // Step 2: Downscale / normalize square canvas to 512x512px before saving
+          const finalCanvas = document.createElement('canvas');
+          finalCanvas.width = placement.canvasSize;
+          finalCanvas.height = placement.canvasSize;
+          const finalCtx = finalCanvas.getContext('2d');
+          if (!finalCtx) {
+            reject(new Error('Canvas 2D context is not available.'));
+            return;
+          }
+          finalCtx.clearRect(0, 0, placement.canvasSize, placement.canvasSize);
+          finalCtx.imageSmoothingEnabled = true;
+          finalCtx.imageSmoothingQuality = 'high';
+          finalCtx.drawImage(
+            squareCanvas,
+            0,
+            0,
+            placement.sourceSquareSize,
+            placement.sourceSquareSize,
+            0,
+            0,
+            placement.canvasSize,
+            placement.canvasSize
+          );
+
+          resolve(finalCanvas.toDataURL('image/png'));
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error('Logo processing failed.'));
+        }
+      };
+      img.src = srcDataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export function normalizeTaxMode(mode: string | undefined): TaxMode {
@@ -125,15 +258,25 @@ export function getEffectiveLineTaxRates(
   };
 }
 
+/**
+ * Computes line item amounts where discounts reduce the pre-tax Taxable Value
+ * rather than being deducted after taxes:
+ * - When `calculateDiscountOnFinalValue === true` (default):
+ *   The user-entered `discountAmount` specifies the exact reduction on the final
+ *   (tax-inclusive) line amount. The pre-tax `taxableAmount` and GST (`cgstAmount`,
+ *   `sgstAmount`, `igstAmount`) are calculated on the discounted base so that
+ *   `taxableAmount + taxAmount === grossLineTotal - discountAmount`.
+ * - When `calculateDiscountOnFinalValue === false`:
+ *   The user-entered `discountAmount` is deducted directly from the pre-tax base
+ *   (`grossMerchandiseAmount`), and GST is calculated on that reduced `taxableAmount`.
+ */
 export function calculateLineItem(
   item: InvoiceLineItem,
-  rawTaxMode: TaxMode
+  rawTaxMode: TaxMode,
+  calculateDiscountOnFinalValue = true
 ): LineCalculation {
   const taxMode = normalizeTaxMode(rawTaxMode);
   const qty = Math.max(0, Number(item.quantity) || 0);
-  const pkgCount = Math.max(0, Number(item.packageCount) || 0);
-  const pkgCost = Math.max(0, Number(item.packagingCostPerPkg) || 0);
-  const discountPct = Math.min(100, Math.max(0, Number(item.discountPercent) || 0));
 
   const {
     cgstPercent: effectiveCgstPercent,
@@ -158,24 +301,77 @@ export function calculateLineItem(
   }
 
   const grossMerchandiseAmount = roundCurrency(qty * unitPriceExclusive);
-  const packagingAmount = roundCurrency(pkgCount * pkgCost);
-  const grossBeforeDiscount = roundCurrency(grossMerchandiseAmount + packagingAmount);
-  const discountAmount = roundCurrency(grossBeforeDiscount * (discountPct / 100));
-  const taxableAmount = roundCurrency(Math.max(0, grossBeforeDiscount - discountAmount));
+  const packagingAmount = 0;
+  const grossBeforeDiscount = grossMerchandiseAmount;
 
+  // Compute undiscounted gross line total for reference
+  let grossCgst = 0;
+  let grossSgst = 0;
+  let grossIgst = 0;
+  if (taxMode === 'CGST_SGST') {
+    grossCgst = roundCurrency(grossMerchandiseAmount * (effectiveCgstPercent / 100));
+    grossSgst = roundCurrency(grossMerchandiseAmount * (effectiveSgstPercent / 100));
+  } else if (taxMode === 'IGST') {
+    grossIgst = roundCurrency(grossMerchandiseAmount * (effectiveIgstPercent / 100));
+  }
+  const grossLineTotal =
+    item.priceEntryMode === 'INCLUSIVE'
+      ? roundCurrency(qty * unitPriceInclusive)
+      : roundCurrency(grossMerchandiseAmount + grossCgst + grossSgst + grossIgst);
+
+  const rawDiscountRupees = Math.max(0, Number(item.discountAmount) || 0);
+
+  let discountAmount = 0;
+  let preTaxDiscountAmount = 0;
+  let taxableAmount = grossMerchandiseAmount;
   let cgstAmount = 0;
   let sgstAmount = 0;
   let igstAmount = 0;
+  let taxAmount = 0;
+  let totalLineAmount = grossLineTotal;
 
-  if (taxMode === 'CGST_SGST') {
-    cgstAmount = roundCurrency(taxableAmount * (effectiveCgstPercent / 100));
-    sgstAmount = roundCurrency(taxableAmount * (effectiveSgstPercent / 100));
-  } else if (taxMode === 'IGST') {
-    igstAmount = roundCurrency(taxableAmount * (effectiveIgstPercent / 100));
+  if (calculateDiscountOnFinalValue) {
+    discountAmount = roundCurrency(Math.min(grossLineTotal, rawDiscountRupees));
+    if (discountAmount === 0 && item.priceEntryMode !== 'INCLUSIVE') {
+      taxableAmount = grossMerchandiseAmount;
+      cgstAmount = grossCgst;
+      sgstAmount = grossSgst;
+      igstAmount = grossIgst;
+      taxAmount = roundCurrency(cgstAmount + sgstAmount + igstAmount);
+      totalLineAmount = grossLineTotal;
+      preTaxDiscountAmount = 0;
+    } else {
+      const targetFinalTotal = roundCurrency(Math.max(0, grossLineTotal - discountAmount));
+      const estimatedTaxable = roundCurrency(targetFinalTotal / taxMultiplier);
+      if (taxMode === 'CGST_SGST') {
+        cgstAmount = roundCurrency(estimatedTaxable * (effectiveCgstPercent / 100));
+        sgstAmount = roundCurrency(estimatedTaxable * (effectiveSgstPercent / 100));
+      } else if (taxMode === 'IGST') {
+        igstAmount = roundCurrency(estimatedTaxable * (effectiveIgstPercent / 100));
+      }
+      taxAmount = roundCurrency(cgstAmount + sgstAmount + igstAmount);
+      taxableAmount =
+        taxMode === 'EXEMPT'
+          ? targetFinalTotal
+          : roundCurrency(Math.max(0, targetFinalTotal - taxAmount));
+      totalLineAmount = targetFinalTotal;
+      preTaxDiscountAmount = roundCurrency(
+        Math.max(0, grossMerchandiseAmount - taxableAmount)
+      );
+    }
+  } else {
+    discountAmount = roundCurrency(Math.min(grossMerchandiseAmount, rawDiscountRupees));
+    preTaxDiscountAmount = discountAmount;
+    taxableAmount = roundCurrency(Math.max(0, grossMerchandiseAmount - preTaxDiscountAmount));
+    if (taxMode === 'CGST_SGST') {
+      cgstAmount = roundCurrency(taxableAmount * (effectiveCgstPercent / 100));
+      sgstAmount = roundCurrency(taxableAmount * (effectiveSgstPercent / 100));
+    } else if (taxMode === 'IGST') {
+      igstAmount = roundCurrency(taxableAmount * (effectiveIgstPercent / 100));
+    }
+    taxAmount = roundCurrency(cgstAmount + sgstAmount + igstAmount);
+    totalLineAmount = roundCurrency(taxableAmount + taxAmount);
   }
-
-  const taxAmount = roundCurrency(cgstAmount + sgstAmount + igstAmount);
-  const totalLineAmount = roundCurrency(taxableAmount + taxAmount);
 
   return {
     unitPriceExclusive: roundCurrency(unitPriceExclusive),
@@ -184,6 +380,7 @@ export function calculateLineItem(
     packagingAmount,
     grossBeforeDiscount,
     discountAmount,
+    preTaxDiscountAmount,
     taxableAmount,
     effectiveCgstPercent,
     effectiveSgstPercent,
@@ -193,6 +390,7 @@ export function calculateLineItem(
     sgstAmount,
     igstAmount,
     taxAmount,
+    grossLineTotal,
     totalLineAmount,
   };
 }
@@ -238,21 +436,21 @@ export function updateItemFromInclusiveRate(
 export function updateItemFromTaxableValue(
   item: InvoiceLineItem,
   targetTaxableValue: number,
-  taxMode: TaxMode
+  taxMode: TaxMode,
+  calculateDiscountOnFinalValue = true
 ): InvoiceLineItem {
   const safeTaxable = Math.max(0, Number(targetTaxableValue) || 0);
   const qty = Math.max(1, Number(item.quantity) || 1);
-  const pkgCount = Math.max(0, Number(item.packageCount) || 0);
-  const pkgCost = Math.max(0, Number(item.packagingCostPerPkg) || 0);
-  const discountPct = Math.min(99.99, Math.max(0, Number(item.discountPercent) || 0));
-
-  const discountFactor = 1 - discountPct / 100;
-  const requiredGrossBeforeDiscount = safeTaxable / discountFactor;
-  const packagingAmount = pkgCount * pkgCost;
-  const requiredMerchandise = Math.max(0, requiredGrossBeforeDiscount - packagingAmount);
-  const newExclUnitPrice = roundRate(requiredMerchandise / qty);
+  const discountRupees = Math.max(0, Number(item.discountAmount) || 0);
   const { totalTaxPercent } = getEffectiveLineTaxRates(item, taxMode);
-  const newInclUnitPrice = roundCurrency(newExclUnitPrice * (1 + totalTaxPercent / 100));
+  const taxMultiplier = 1 + totalTaxPercent / 100;
+
+  const preTaxDiscount = calculateDiscountOnFinalValue
+    ? discountRupees / taxMultiplier
+    : discountRupees;
+  const grossMerchandiseNeeded = safeTaxable + preTaxDiscount;
+  const newExclUnitPrice = roundRate(grossMerchandiseNeeded / qty);
+  const newInclUnitPrice = roundCurrency(newExclUnitPrice * taxMultiplier);
 
   return {
     ...item,
@@ -265,12 +463,19 @@ export function updateItemFromTaxableValue(
 export function updateItemFromLineTotalInclusive(
   item: InvoiceLineItem,
   targetLineTotalInclusive: number,
-  taxMode: TaxMode
+  taxMode: TaxMode,
+  calculateDiscountOnFinalValue = true
 ): InvoiceLineItem {
   const safeTotal = Math.max(0, Number(targetLineTotalInclusive) || 0);
   const { totalTaxPercent } = getEffectiveLineTaxRates(item, taxMode);
-  const targetTaxable = safeTotal / (1 + totalTaxPercent / 100);
-  return updateItemFromTaxableValue(item, targetTaxable, taxMode);
+  const taxMultiplier = 1 + totalTaxPercent / 100;
+  const targetTaxable = safeTotal / taxMultiplier;
+  return updateItemFromTaxableValue(
+    item,
+    targetTaxable,
+    taxMode,
+    calculateDiscountOnFinalValue
+  );
 }
 
 export function updateItemTaxRates(
@@ -318,19 +523,67 @@ export function updateItemTaxRates(
   return updateItemFromExclusiveRate(nextItem, nextItem.unitPrice, mode);
 }
 
+/**
+ * Returns the tax-inclusive unit price of a saved CatalogItem.
+ * Supports both new catalog items with explicit `unitPriceInclusive` and legacy items.
+ */
+export function getCatalogItemInclusivePrice(item: CatalogItem): number {
+  const tax = Math.max(0, Number(item.taxPercent) || 0);
+  if (
+    item.unitPriceInclusive !== undefined &&
+    Number.isFinite(Number(item.unitPriceInclusive)) &&
+    Number(item.unitPriceInclusive) >= 0
+  ) {
+    return roundCurrency(Number(item.unitPriceInclusive));
+  }
+  const excl = Math.max(0, Number(item.unitPrice) || 0);
+  return roundCurrency(excl * (1 + tax / 100));
+}
+
+/**
+ * Creates a CatalogItem from a user-entered tax-inclusive unit price and tax percentage,
+ * automatically computing and storing the exclusive base unit price.
+ */
+export function createCatalogItemFromInclusivePrice(input: {
+  id?: string;
+  name: string;
+  skuOrHsn: string;
+  packagingType: PackagingType;
+  unitPriceInclusive: number;
+  taxPercent: number;
+}): CatalogItem {
+  const safeIncl = roundCurrency(Math.max(0, Number(input.unitPriceInclusive) || 0));
+  const safeTax = roundCurrency(Math.min(100, Math.max(0, Number(input.taxPercent) || 0)));
+  const excl = roundCurrency(safeIncl / (1 + safeTax / 100));
+  return {
+    id: input.id || `cat-${Date.now()}`,
+    name: input.name.trim(),
+    skuOrHsn: input.skuOrHsn.trim(),
+    packagingType: input.packagingType,
+    unitsPerPackage: 1,
+    unitPrice: excl,
+    unitPriceInclusive: safeIncl,
+    packagingCostPerPkg: 0,
+    taxPercent: safeTax,
+  };
+}
+
 export function calculateInvoiceSummary(invoice: Invoice): InvoiceSummaryCalculation {
   const taxMode = normalizeTaxMode(invoice.taxMode);
+  const calculateDiscountOnFinalValue = true;
   const lines: Record<string, LineCalculation> = {};
   let totalPackages = 0;
   let totalUnits = 0;
   let merchandiseSubtotal = 0;
   let packagingSubtotal = 0;
   let itemDiscountTotal = 0;
-  let taxableSubtotalBeforeExtraDiscount = 0;
-  let totalTax = 0;
-  let cgstTotal = 0;
-  let sgstTotal = 0;
-  let igstTotal = 0;
+  let itemPreTaxDiscountTotal = 0;
+  let lineTaxableSubtotal = 0;
+  let lineTotalTax = 0;
+  let lineCgstTotal = 0;
+  let lineSgstTotal = 0;
+  let lineIgstTotal = 0;
+  let lineFinalTotal = 0;
 
   const slabMap = new Map<
     string,
@@ -344,24 +597,32 @@ export function calculateInvoiceSummary(invoice: Invoice): InvoiceSummaryCalcula
       sgst: number;
       igst: number;
       totalTax: number;
+      finalAmount: number;
     }
   >();
 
   for (const item of invoice.items) {
-    const calc = calculateLineItem(item, taxMode);
+    const calc = calculateLineItem(item, taxMode, calculateDiscountOnFinalValue);
     lines[item.id] = calc;
-    totalPackages += Math.max(0, Number(item.packageCount) || 0);
-    totalUnits += Math.max(0, Number(item.quantity) || 0);
+    const itemQty = Math.max(0, Number(item.quantity) || 0);
+    const itemPkg =
+      item.packageCount !== undefined && Number(item.packageCount) > 0
+        ? Math.max(0, Number(item.packageCount))
+        : itemQty;
+    totalPackages += itemPkg;
+    totalUnits += itemQty;
     merchandiseSubtotal = roundCurrency(merchandiseSubtotal + calc.grossMerchandiseAmount);
     packagingSubtotal = roundCurrency(packagingSubtotal + calc.packagingAmount);
     itemDiscountTotal = roundCurrency(itemDiscountTotal + calc.discountAmount);
-    taxableSubtotalBeforeExtraDiscount = roundCurrency(
-      taxableSubtotalBeforeExtraDiscount + calc.taxableAmount
+    itemPreTaxDiscountTotal = roundCurrency(
+      itemPreTaxDiscountTotal + calc.preTaxDiscountAmount
     );
-    totalTax = roundCurrency(totalTax + calc.taxAmount);
-    cgstTotal = roundCurrency(cgstTotal + calc.cgstAmount);
-    sgstTotal = roundCurrency(sgstTotal + calc.sgstAmount);
-    igstTotal = roundCurrency(igstTotal + calc.igstAmount);
+    lineTaxableSubtotal = roundCurrency(lineTaxableSubtotal + calc.taxableAmount);
+    lineTotalTax = roundCurrency(lineTotalTax + calc.taxAmount);
+    lineCgstTotal = roundCurrency(lineCgstTotal + calc.cgstAmount);
+    lineSgstTotal = roundCurrency(lineSgstTotal + calc.sgstAmount);
+    lineIgstTotal = roundCurrency(lineIgstTotal + calc.igstAmount);
+    lineFinalTotal = roundCurrency(lineFinalTotal + calc.totalLineAmount);
 
     const slabKey = `${calc.effectiveTaxPercent}-${calc.effectiveCgstPercent}-${calc.effectiveSgstPercent}-${calc.effectiveIgstPercent}`;
     const existing = slabMap.get(slabKey) || {
@@ -374,33 +635,143 @@ export function calculateInvoiceSummary(invoice: Invoice): InvoiceSummaryCalcula
       sgst: 0,
       igst: 0,
       totalTax: 0,
+      finalAmount: 0,
     };
     existing.taxableAmount = roundCurrency(existing.taxableAmount + calc.taxableAmount);
     existing.cgst = roundCurrency(existing.cgst + calc.cgstAmount);
     existing.sgst = roundCurrency(existing.sgst + calc.sgstAmount);
     existing.igst = roundCurrency(existing.igst + calc.igstAmount);
     existing.totalTax = roundCurrency(existing.totalTax + calc.taxAmount);
+    existing.finalAmount = roundCurrency(existing.finalAmount + calc.totalLineAmount);
     slabMap.set(slabKey, existing);
   }
 
-  const additionalDiscountAmount = roundCurrency(
-    Math.min(
-      taxableSubtotalBeforeExtraDiscount,
-      Math.max(0, Number(invoice.additionalDiscountAmount) || 0)
-    )
-  );
-  const taxableSubtotal = roundCurrency(
-    Math.max(0, taxableSubtotalBeforeExtraDiscount - additionalDiscountAmount)
-  );
-  const shippingAndHandling = roundCurrency(
-    Math.max(0, Number(invoice.shippingAndHandling) || 0)
-  );
+  // Freight & Forwarding Charges removed altogether
+  const shippingAndHandling = 0;
 
-  const rawGrandTotal = roundCurrency(taxableSubtotal + totalTax + shippingAndHandling);
+  const rawAdditionalDiscount = Math.max(0, Number(invoice.additionalDiscountAmount) || 0);
+  let additionalDiscountAmount = 0;
+  let additionalPreTaxDiscountAmount = 0;
+  let taxableSubtotal = lineTaxableSubtotal;
+  let cgstTotal = lineCgstTotal;
+  let sgstTotal = lineSgstTotal;
+  let igstTotal = lineIgstTotal;
+  let totalTax = lineTotalTax;
+  let rawGrandTotal = lineFinalTotal;
+
+  const sortedSlabs = Array.from(slabMap.values()).sort((a, b) => a.rate - b.rate);
+
+  if (rawAdditionalDiscount > 0 && sortedSlabs.length > 0) {
+    if (calculateDiscountOnFinalValue) {
+      // Additional discount is calculated on the final value so that taxable value and GST
+      // are reduced proportionally and the final payable amount changes by the exact discount entered.
+      additionalDiscountAmount = roundCurrency(Math.min(lineFinalTotal, rawAdditionalDiscount));
+      rawGrandTotal = roundCurrency(Math.max(0, lineFinalTotal - additionalDiscountAmount));
+      const scaleRatio = lineFinalTotal > 0 ? rawGrandTotal / lineFinalTotal : 0;
+
+      taxableSubtotal = 0;
+      cgstTotal = 0;
+      sgstTotal = 0;
+      igstTotal = 0;
+      totalTax = 0;
+
+      let remainingFinal = rawGrandTotal;
+      sortedSlabs.forEach((slab, idx) => {
+        const isLast = idx === sortedSlabs.length - 1;
+        const slabTargetFinal = isLast
+          ? roundCurrency(Math.max(0, remainingFinal))
+          : roundCurrency(slab.finalAmount * scaleRatio);
+        remainingFinal = roundCurrency(remainingFinal - slabTargetFinal);
+
+        const slabMultiplier = 1 + slab.rate / 100;
+        const estTaxable = roundCurrency(slabTargetFinal / slabMultiplier);
+        if (taxMode === 'CGST_SGST') {
+          slab.cgst = roundCurrency(estTaxable * (slab.cgstRate / 100));
+          slab.sgst = roundCurrency(estTaxable * (slab.sgstRate / 100));
+          slab.igst = 0;
+        } else if (taxMode === 'IGST') {
+          slab.cgst = 0;
+          slab.sgst = 0;
+          slab.igst = roundCurrency(estTaxable * (slab.igstRate / 100));
+        } else {
+          slab.cgst = 0;
+          slab.sgst = 0;
+          slab.igst = 0;
+        }
+        slab.totalTax = roundCurrency(slab.cgst + slab.sgst + slab.igst);
+        slab.taxableAmount =
+          taxMode === 'EXEMPT'
+            ? slabTargetFinal
+            : roundCurrency(Math.max(0, slabTargetFinal - slab.totalTax));
+
+        taxableSubtotal = roundCurrency(taxableSubtotal + slab.taxableAmount);
+        cgstTotal = roundCurrency(cgstTotal + slab.cgst);
+        sgstTotal = roundCurrency(sgstTotal + slab.sgst);
+        igstTotal = roundCurrency(igstTotal + slab.igst);
+        totalTax = roundCurrency(totalTax + slab.totalTax);
+      });
+
+      additionalPreTaxDiscountAmount = roundCurrency(
+        Math.max(0, lineTaxableSubtotal - taxableSubtotal)
+      );
+    } else {
+      // Additional discount is deducted directly from the pre-tax taxable value before taxes are applied.
+      additionalDiscountAmount = roundCurrency(
+        Math.min(lineTaxableSubtotal, rawAdditionalDiscount)
+      );
+      additionalPreTaxDiscountAmount = additionalDiscountAmount;
+      const targetTaxableSubtotal = roundCurrency(
+        Math.max(0, lineTaxableSubtotal - additionalPreTaxDiscountAmount)
+      );
+      const scaleRatio =
+        lineTaxableSubtotal > 0 ? targetTaxableSubtotal / lineTaxableSubtotal : 0;
+
+      taxableSubtotal = 0;
+      cgstTotal = 0;
+      sgstTotal = 0;
+      igstTotal = 0;
+      totalTax = 0;
+
+      let remainingTaxable = targetTaxableSubtotal;
+      sortedSlabs.forEach((slab, idx) => {
+        const isLast = idx === sortedSlabs.length - 1;
+        slab.taxableAmount = isLast
+          ? roundCurrency(Math.max(0, remainingTaxable))
+          : roundCurrency(slab.taxableAmount * scaleRatio);
+        remainingTaxable = roundCurrency(remainingTaxable - slab.taxableAmount);
+
+        if (taxMode === 'CGST_SGST') {
+          slab.cgst = roundCurrency(slab.taxableAmount * (slab.cgstRate / 100));
+          slab.sgst = roundCurrency(slab.taxableAmount * (slab.sgstRate / 100));
+          slab.igst = 0;
+        } else if (taxMode === 'IGST') {
+          slab.cgst = 0;
+          slab.sgst = 0;
+          slab.igst = roundCurrency(slab.taxableAmount * (slab.igstRate / 100));
+        } else {
+          slab.cgst = 0;
+          slab.sgst = 0;
+          slab.igst = 0;
+        }
+        slab.totalTax = roundCurrency(slab.cgst + slab.sgst + slab.igst);
+
+        taxableSubtotal = roundCurrency(taxableSubtotal + slab.taxableAmount);
+        cgstTotal = roundCurrency(cgstTotal + slab.cgst);
+        sgstTotal = roundCurrency(sgstTotal + slab.sgst);
+        igstTotal = roundCurrency(igstTotal + slab.igst);
+        totalTax = roundCurrency(totalTax + slab.totalTax);
+      });
+
+      rawGrandTotal = roundCurrency(taxableSubtotal + totalTax);
+    }
+  }
+
   const grandTotal = invoice.roundOff ? Math.round(rawGrandTotal) : rawGrandTotal;
   const roundOffAdjustment = roundCurrency(grandTotal - rawGrandTotal);
 
-  const taxSlabBreakdown = Array.from(slabMap.values()).sort((a, b) => a.rate - b.rate);
+  const taxSlabBreakdown = sortedSlabs.map(
+    ({ finalAmount: _unused, ...rest }) => rest
+  );
 
   return {
     lines,
@@ -409,7 +780,10 @@ export function calculateInvoiceSummary(invoice: Invoice): InvoiceSummaryCalcula
     merchandiseSubtotal,
     packagingSubtotal,
     itemDiscountTotal,
+    itemPreTaxDiscountTotal,
     additionalDiscountAmount,
+    additionalPreTaxDiscountAmount,
+    calculateDiscountOnFinalValue,
     taxableSubtotal,
     totalTax,
     cgstTotal,
@@ -424,8 +798,13 @@ export function calculateInvoiceSummary(invoice: Invoice): InvoiceSummaryCalcula
 }
 
 export function formatPackagePlural(type: string, count: number): string {
-  if (count === 1) return type;
-  if (type.endsWith('x') || type.endsWith('s') || type.endsWith('ch')) {
+  if (count === 1 || type === 'Dozen') return type;
+  if (
+    type.endsWith('x') ||
+    type.endsWith('s') ||
+    type.endsWith('ch') ||
+    type.endsWith('sh')
+  ) {
     return `${type}es`;
   }
   return `${type}s`;
@@ -592,6 +971,31 @@ export function generateNextInvoiceNumber(invoices: Invoice[]): string {
   return `${prefix}${String(maxSeq + 1).padStart(4, '0')}`;
 }
 
+export function formatBuyerDisplayName(invoice: Invoice): string {
+  if (invoice.isCashCustomer) return 'Cash Customer';
+  return (
+    invoice.buyer.companyName?.trim() ||
+    invoice.buyer.name?.trim() ||
+    'Unnamed Client'
+  );
+}
+
+export function formatPaymentMethodSummary(invoice: Invoice): string {
+  const method = (invoice.paymentMethod || '').trim();
+  if (!method && !(invoice.paymentMethodDetails || '').trim()) {
+    return '';
+  }
+  const baseLabel =
+    method === 'Other'
+      ? (invoice.paymentMethodOther || '').trim() || 'Other'
+      : method;
+  const details = (invoice.paymentMethodDetails || '').trim();
+  if (baseLabel && details) {
+    return `${baseLabel} (${details})`;
+  }
+  return baseLabel || details;
+}
+
 export function filterAndSortInvoices(
   invoices: Invoice[],
   filters: DashboardFilters,
@@ -609,11 +1013,14 @@ export function filterAndSortInvoices(
     if (query) {
       const haystacks = [
         inv.invoiceNumber,
-        inv.buyer.companyName,
-        inv.buyer.name,
-        inv.buyer.taxId,
-        inv.buyer.email,
+        inv.isCashCustomer ? 'Cash Customer' : inv.buyer.companyName,
+        inv.isCashCustomer ? '' : inv.buyer.name,
+        inv.isCashCustomer ? '' : inv.buyer.taxId,
+        inv.isCashCustomer ? '' : inv.buyer.email,
         inv.purchaseOrderNumber,
+        inv.paymentMethod,
+        inv.paymentMethodOther,
+        inv.paymentMethodDetails,
         ...inv.items.map((i) => i.name),
         ...inv.items.map((i) => i.skuOrHsn),
       ]
@@ -682,11 +1089,19 @@ export function normalizeInvoiceRecord(raw: Invoice): Invoice {
         ? Number(item.unitPriceInclusive)
         : roundCurrency(unitPrice * (1 + effectiveRate / 100));
 
+    const discountAmount =
+      item.discountAmount !== undefined
+        ? Math.max(0, Number(item.discountAmount) || 0)
+        : 0;
+
     return {
       ...item,
       priceEntryMode: item.priceEntryMode || 'EXCLUSIVE',
       unitPrice,
       unitPriceInclusive,
+      discountAmount,
+      packagingCostPerPkg: 0,
+      discountPercent: 0,
       cgstPercent: cgst,
       sgstPercent: sgst,
       igstPercent: igst,
@@ -694,10 +1109,24 @@ export function normalizeInvoiceRecord(raw: Invoice): Invoice {
     };
   });
 
+  const isPaid = raw.status === 'Paid';
+  const isCashCustomer = Boolean(raw.isCashCustomer);
+
   return {
     ...raw,
     currency: 'INR',
     taxMode,
+    dueDate: isPaid ? '' : raw.dueDate || '',
+    isCashCustomer,
+    paymentMethod: raw.paymentMethod || '',
+    paymentMethodOther: raw.paymentMethodOther || '',
+    paymentMethodDetails: raw.paymentMethodDetails || '',
+    calculateDiscountOnFinalValue: raw.calculateDiscountOnFinalValue ?? true,
+    shippingAndHandling: 0,
+    pdfOptions: {
+      ...raw.pdfOptions,
+      showSellerLogo: raw.pdfOptions?.showSellerLogo ?? true,
+    },
     items,
   };
 }
