@@ -1,6 +1,6 @@
 {
   "name": "Billuminati",
-  "description": "Professional, fast, and uncluttered tax invoice and bill making software with customizable PDF export, packaging management, and JSON backup.",
+  "description": "Billuminati is a free, open-source Indian GST tax invoice and billing studio. Create GST bills with bidirectional pricing, PDF export, and JSON backups.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
