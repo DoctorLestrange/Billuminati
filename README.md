@@ -1,10 +1,15 @@
 # Billuminati — GST Tax Invoice & Billing Studio
 
+<p align="center">
+  <img src="./logo.svg" alt="Billuminati Logo" width="600" />
+</p>
+
 **Billuminati** is a fast, uncluttered, offline-capable Indian GST Tax Invoice and billing studio built with React, TypeScript, Tailwind CSS, and `jsPDF`. It starts with a clean slate—zero pre-populated sample bills or dummy profiles—and runs 100% in your browser using `localStorage` with portable JSON backups.
 
-**[Live Demo](https://ais-pre-krvujcidq7oq766juvyppq-1001307958281.asia-southeast1.run.app)** · **[GitHub Repository](https://github.com/DoctorLestrange/Billuminati)**
+**[Live Demo](https://billuminati.ai.studio)** · **[GitHub Repository](https://github.com/DoctorLestrange/Billuminati)**
 
-![Billuminati — GST Invoice Editor alongside Live Print-Ready PDF Preview](./docs/screenshot-preview.png)
+![Billuminati — GST Invoice Editor alongside Live Print-Ready PDF Preview](./screenshots/screenshot_preview_1.png)
+![Billuminati — GST Invoice Editor alongside Live Print-Ready PDF Preview](./screenshots/screenshot_preview_2.png)
 
 ---
 
