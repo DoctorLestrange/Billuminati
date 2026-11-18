@@ -1,0 +1,42 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .font-mono,
+  .tabular-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Subtle low-contrast square ruled background pattern that never conflicts with UI elements */
+.bg-square-ruled {
+  background-size: 24px 24px;
+  background-image: 
+    linear-gradient(to right, rgba(15, 23, 42, 0.038) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.038) 1px, transparent 1px);
+}
+
+.dark .bg-square-ruled {
+  background-size: 24px 24px;
+  background-image: 
+    linear-gradient(to right, rgba(248, 250, 252, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(248, 250, 252, 0.035) 1px, transparent 1px);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

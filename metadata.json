@@ -1,0 +1,6 @@
+{
+  "name": "Billuminati",
+  "description": "Professional, fast, and uncluttered tax invoice and bill making software with customizable PDF export, packaging management, and JSON backup.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
