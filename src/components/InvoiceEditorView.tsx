@@ -1157,10 +1157,14 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
               <div>
-                <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                <label
+                  htmlFor="seller-company-name"
+                  className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+                >
                   Seller Company Name
                 </label>
                 <input
+                  id="seller-company-name"
                   type="text"
                   value={invoice.seller.companyName}
                   onChange={(e) =>
@@ -1170,10 +1174,14 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 />
               </div>
               <div>
-                <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                <label
+                  htmlFor="seller-gstin"
+                  className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+                >
                   Seller GSTIN
                 </label>
                 <input
+                  id="seller-gstin"
                   type="text"
                   value={invoice.seller.taxId}
                   onChange={(e) => updateSellerField('taxId', e.target.value)}
@@ -1181,10 +1189,14 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 />
               </div>
               <div>
-                <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                <label
+                  htmlFor="seller-address"
+                  className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+                >
                   Seller Address
                 </label>
                 <input
+                  id="seller-address"
                   type="text"
                   value={invoice.seller.addressLine1}
                   onChange={(e) =>
@@ -1194,10 +1206,14 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 />
               </div>
               <div>
-                <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                <label
+                  htmlFor="seller-bank-name"
+                  className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+                >
                   Bank Name & Branch
                 </label>
                 <input
+                  id="seller-bank-name"
                   type="text"
                   value={invoice.bankDetails.bankName}
                   onChange={(e) => updateBankField('bankName', e.target.value)}
@@ -1205,10 +1221,14 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 />
               </div>
               <div>
-                <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                <label
+                  htmlFor="seller-bank-account"
+                  className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+                >
                   Bank Account Number
                 </label>
                 <input
+                  id="seller-bank-account"
                   type="text"
                   value={invoice.bankDetails.accountNumber}
                   onChange={(e) =>
@@ -1218,10 +1238,14 @@ export const InvoiceEditorView: React.FC<InvoiceEditorViewProps> = ({
                 />
               </div>
               <div>
-                <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                <label
+                  htmlFor="seller-bank-ifsc"
+                  className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+                >
                   IFSC Code
                 </label>
                 <input
+                  id="seller-bank-ifsc"
                   type="text"
                   value={invoice.bankDetails.routingOrIfsc}
                   onChange={(e) =>

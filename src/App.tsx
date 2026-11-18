@@ -31,6 +31,7 @@ import { DashboardView } from './components/DashboardView';
 import { InvoiceEditorView } from './components/InvoiceEditorView';
 import { PdfPreviewModal } from './components/PdfPreviewModal';
 import { DataSettingsModal } from './components/DataSettingsModal';
+import { GITHUB_REPO_URL, WelcomeModal } from './components/WelcomeModal';
 
 const STORAGE_KEYS = {
   INVOICES: 'billuminati_invoices_clean_v1',
@@ -40,6 +41,7 @@ const STORAGE_KEYS = {
   TERMS: 'billuminati_default_terms_clean_v1',
   CATALOG: 'billuminati_catalog_clean_v1',
   THEME: 'billuminati_theme_v1',
+  WELCOME_SEEN: 'billuminati_welcome_seen_v1',
 };
 
 function loadFromStorage<T>(key: string, fallback: T): T {
@@ -95,6 +97,41 @@ export default function App() {
   const [dataModalTab, setDataModalTab] = useState<
     'backup' | 'seller' | 'catalog' | null
   >(null);
+
+  const [showWelcomeModal, setShowWelcomeModal] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('autostart') === '1') {
+          return false;
+        }
+      }
+      const alreadySeen = localStorage.getItem(STORAGE_KEYS.WELCOME_SEEN);
+      return alreadySeen !== 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Mark welcome screen as seen immediately once displayed so it never appears again
+  useEffect(() => {
+    if (showWelcomeModal) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.WELCOME_SEEN, 'true');
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, [showWelcomeModal]);
+
+  const handleDismissWelcome = () => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.WELCOME_SEEN, 'true');
+    } catch {
+      // ignore storage errors
+    }
+    setShowWelcomeModal(false);
+  };
 
   const [filters, setFilters] = useState<DashboardFilters>({
     searchQuery: '',
@@ -555,7 +592,7 @@ export default function App() {
       <footer className="border-t border-zinc-200/80 dark:border-[#2a2a2e] bg-white/60 dark:bg-[#18181b]/70 px-6 py-4 text-xs text-zinc-500 dark:text-zinc-400">
         <div className="max-w-[1280px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>Billuminati — Tax Invoice & Packaging Ledger</span>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
               onClick={() => setDataModalTab('backup')}
@@ -571,9 +608,29 @@ export default function App() {
             >
               Default Seller Settings
             </button>
+            <span>·</span>
+            <a
+              href={GITHUB_REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] hover:text-zinc-900 dark:hover:text-zinc-200 underline-offset-4 hover:underline"
+            >
+              GitHub
+            </a>
           </div>
         </div>
       </footer>
+
+      {/* One-Time First-Visit Welcome Modal */}
+      {showWelcomeModal && (
+        <WelcomeModal
+          onDismiss={handleDismissWelcome}
+          onSetupSellerProfile={() => {
+            handleDismissWelcome();
+            setDataModalTab('seller');
+          }}
+        />
+      )}
 
       {/* Live PDF Preview & Page Options Modal */}
       {pdfPreviewInvoice && (
