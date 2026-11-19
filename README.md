@@ -149,8 +149,8 @@ Billuminati/
 ## Getting Started
 
 ### Prerequisites
-- **Node.js** `v18+` (recommended `v20+`)
-- **npm** `v9+`
+- **Node.js** `v20.19+` (recommended `v22+` or `v24`)
+- **npm** `v10+`
 
 ### Local Development
 
