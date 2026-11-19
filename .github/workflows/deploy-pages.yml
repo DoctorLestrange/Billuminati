@@ -18,17 +18,47 @@ jobs:
   build:
     name: Build static bundle
     runs-on: ubuntu-latest
+    outputs:
+      pages_enabled: ${{ steps.check_pages.outputs.enabled }}
 
     steps:
+      - name: Check if GitHub Pages (Actions) is enabled
+        id: check_pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RESPONSE=$(curl -sS -w "\n%{http_code}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/pages")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" = "200" ] && echo "$BODY" | grep -q '"build_type"[[:space:]]*:[[:space:]]*"workflow"'; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "::error::GitHub Pages is not configured for GitHub Actions. Go to Settings -> Pages -> Build and deployment -> Source -> GitHub Actions, then re-run this workflow."
+              exit 1
+            else
+              echo "::notice::Skipping GitHub Pages deployment because Pages (GitHub Actions source) is not enabled in Settings -> Pages."
+            fi
+          fi
+
       - name: Checkout repository
+        if: steps.check_pages.outputs.enabled == 'true'
         uses: actions/checkout@v7
 
       - name: Set up Node.js
+        if: steps.check_pages.outputs.enabled == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 24
 
       - name: Install dependencies
+        if: steps.check_pages.outputs.enabled == 'true'
         run: |
           if [ -f package-lock.json ]; then
             npm ci
@@ -37,14 +67,17 @@ jobs:
           fi
 
       - name: Configure Pages
+        if: steps.check_pages.outputs.enabled == 'true'
         uses: actions/configure-pages@v6
 
       - name: Build for GitHub Pages
+        if: steps.check_pages.outputs.enabled == 'true'
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
         run: npm run build
 
       - name: Upload Pages artifact
+        if: steps.check_pages.outputs.enabled == 'true'
         uses: actions/upload-pages-artifact@v5
         with:
           path: ./dist
@@ -56,6 +89,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+    if: needs.build.outputs.pages_enabled == 'true'
 
     steps:
       - name: Deploy to GitHub Pages

@@ -32,3 +32,4 @@ Thumbs.db
 # Tooling & test artifacts
 .playwright-cli/
 .aistudio/
+public/assets/aistudio/
