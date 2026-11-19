@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Launch Live App (Billuminati)
+    url: https://billuminati.ai.studio
+    about: Open the hosted Billuminati GST Tax Invoice & Billing Studio in your browser
+  - name: Security Policy
+    url: https://github.com/DoctorLestrange/Billuminati/blob/main/SECURITY.md
+    about: Learn about Billuminati's local-first privacy architecture or report a security vulnerability

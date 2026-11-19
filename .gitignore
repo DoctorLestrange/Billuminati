@@ -1,8 +1,34 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 build/
 dist/
+dist-ssr/
 coverage/
-.DS_Store
-*.log
+.cache/
+*.tsbuildinfo
+
+# Environment & local overrides
 .env*
 !.env.example
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# Tooling & test artifacts
+.playwright-cli/
+.aistudio/
