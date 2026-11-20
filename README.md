@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://billuminati.ai.studio">
+<a href="https://doctorlestrange.github.io/Billuminati/">
   <img src="./img_resources/billuminati_logo_complete_with_border.png" alt="Billuminati — GST Tax Invoice & Billing Studio" width="640" />
 </a>
 
@@ -13,7 +13,7 @@
 </p>
 
 <p>
-  <a href="https://billuminati.ai.studio">
+  <a href="https://doctorlestrange.github.io/Billuminati/">
     <img src="https://img.shields.io/badge/Live%20Demo-billuminati.ai.studio-18181b?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Demo" />
   </a>
   <a href="./LICENSE">
@@ -28,7 +28,7 @@
 </p>
 
 <p>
-  <a href="https://billuminati.ai.studio"><strong>Launch Live App</strong></a>
+  <a href="https://doctorlestrange.github.io/Billuminati/"><strong>Launch Live App</strong></a>
   &nbsp;&middot;&nbsp;
   <a href="#interface-preview">Screenshots</a>
   &nbsp;&middot;&nbsp;
@@ -195,7 +195,7 @@ Because Billuminati is a **100% static client-side web application** with no bac
 
 | Platform | Configuration |
 | :--- | :--- |
-| **Live Hosted Instance** | [https://billuminati.ai.studio](https://billuminati.ai.studio) |
+| **Live Hosted Instance** | [https://doctorlestrange.github.io/Billuminati/](https://doctorlestrange.github.io/Billuminati/) |
 | **GitHub Pages** | Enable **Settings &rarr; Pages &rarr; Source: GitHub Actions**. The included [`.github/workflows/deploy-pages.yml`](./.github/workflows/deploy-pages.yml) workflow automatically builds with `VITE_BASE_PATH=/<repo-name>/` and publishes on pushes to `main`. |
 | **Vercel / Netlify / Cloudflare Pages** | Connect your GitHub repository with Build Command `npm run build` and Output Directory `dist` (no environment variables required). |
 | **Self-Hosted Static Server** | Run `npm run build` and serve the `dist/` directory with Nginx, Caddy, Apache, or any static file server. |
