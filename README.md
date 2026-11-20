@@ -14,7 +14,7 @@
 
 <p>
   <a href="https://doctorlestrange.github.io/Billuminati/">
-    <img src="https://img.shields.io/badge/Live%20Demo-billuminati.ai.studio-18181b?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Demo" />
+    <img src="https://img.shields.io/badge/Live%20Demo-doctorlestrange.github.io/Billuminati/-18181b?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Demo" />
   </a>
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/License-Apache%202.0-2563eb?style=for-the-badge" alt="Apache 2.0 License" />
